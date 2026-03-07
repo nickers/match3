@@ -1,175 +1,193 @@
 package org.example.project
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import org.jetbrains.compose.resources.painterResource
 import kotlinproject.composeapp.generated.resources.Res
-import kotlinproject.composeapp.generated.resources.compose_multiplatform
+import kotlinproject.composeapp.generated.resources.jelly_1
+import kotlinproject.composeapp.generated.resources.jelly_2
+import kotlinproject.composeapp.generated.resources.jelly_3
+import kotlinproject.composeapp.generated.resources.jelly_4
+import kotlinproject.composeapp.generated.resources.jelly_5
+import kotlinproject.composeapp.generated.resources.jelly_6
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.DrawableResource
+import org.jetbrains.compose.resources.painterResource
+import kotlin.math.min
 import kotlin.math.roundToInt
 
-data class PlacedItem(
-    val id: Int,
-    val position: Offset,
-    val label: String
-)
-
-@Composable
-fun InfinitePlaneApp() {
-    var offset by remember { mutableStateOf(Offset(0f, 0f)) }
-    var scale by remember { mutableStateOf(1f) }
-    var selectedItem by remember { mutableStateOf<PlacedItem?>(null) }
-    
-    val items = remember {
-        listOf(
-            PlacedItem(1, Offset(0f, 0f), "Center"),
-            PlacedItem(2, Offset(500f, 200f), "East"),
-            PlacedItem(3, Offset(-400f, 300f), "South-West"),
-            PlacedItem(4, Offset(200f, -400f), "North-East"),
-            PlacedItem(5, Offset(-600f, -200f), "North-West"),
-            PlacedItem(6, Offset(800f, -100f), "Far East"),
-            PlacedItem(7, Offset(-300f, 600f), "Far South-West"),
-        )
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.primaryContainer)
-            .then(
-                if (selectedItem == null) {
-                    Modifier.pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            offset = Offset(
-                                offset.x + pan.x,
-                                offset.y + pan.y
-                            )
-                            scale = (scale * zoom).coerceIn(0.3f, 3f)
-                        }
-                    }.pointerInput(Unit) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                if (event.type == PointerEventType.Scroll) {
-                                    val scrollDelta = event.changes.first().scrollDelta.y
-                                    if (scrollDelta != 0f) {
-                                        val zoomFactor = if (scrollDelta < 0) 1.1f else 0.9f
-                                        val newScale = (scale * zoomFactor).coerceIn(0.3f, 3f)
-                                        val mousePos = event.changes.first().position
-                                        val worldPosBefore = Offset(
-                                            (mousePos.x - offset.x) / scale,
-                                            (mousePos.y - offset.y) / scale
-                                        )
-                                        scale = newScale
-                                        val worldPosAfter = Offset(
-                                            worldPosBefore.x * scale + offset.x,
-                                            worldPosBefore.y * scale + offset.y
-                                        )
-                                        offset = Offset(
-                                            offset.x + (mousePos.x - worldPosAfter.x),
-                                            offset.y + (mousePos.y - worldPosAfter.y)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    Modifier
-                }
-            )
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    translationX = offset.x
-                    translationY = offset.y
-                    scaleX = scale
-                    scaleY = scale
-                }
-        ) {
-            items.forEach { item ->
-                Button(
-                    onClick = { selectedItem = item },
-                    modifier = Modifier
-                        .offset { IntOffset(item.position.x.roundToInt(), item.position.y.roundToInt()) }
-                ) {
-                    Text(item.label)
-                }
-            }
-        }
-
-        Text(
-            text = "Drag to pan | Scroll to zoom | Scale: ${((scale * 10).roundToInt()) / 10.0}x",
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(16.dp),
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-
-        selectedItem?.let { item ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    modifier = Modifier.padding(32.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 8.dp
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = item.label,
-                            style = MaterialTheme.typography.headlineMedium
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Image(painterResource(Res.drawable.compose_multiplatform), null)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Item ${item.id}: ${Greeting().greet()}")
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Button(onClick = { selectedItem = null }) {
-                            Text("Close")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+private val GRID_PADDING = 24.dp
+private const val GAP_FRACTION = 0.06f
 
 @Composable
 fun App() {
+    val vm = remember { GameViewModel() }
+    val state = vm.state
+
     MaterialTheme {
-        InfinitePlaneApp()
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            GameGrid(
+                state = state,
+                padding = GRID_PADDING,
+                onCellClick = vm::onCellClick,
+                onSwapFinished = vm::onSwapAnimationFinished,
+            )
+        }
     }
 }
+
+@Composable
+private fun GameGrid(
+    state: GameState,
+    padding: Dp,
+    onCellClick: (GridPos) -> Unit,
+    onSwapFinished: () -> Unit,
+) {
+    val swapA = state.swappingA
+    val swapB = state.swappingB
+    val grid = state.grid
+
+    // BoxWithConstraints gives us maxWidth/maxHeight in Dp during composition,
+    // so stride is available where LaunchedEffect runs.
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        val density = LocalDensity.current
+        val paddingPx = with(density) { padding.toPx() }
+        val available = min(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat()) - paddingPx * 2
+        val n = GRID_SIZE
+        val cellPx = available / (n + GAP_FRACTION * (n - 1))
+        val gapPx = cellPx * GAP_FRACTION
+        val stride = cellPx + gapPx
+        val cellDp = with(density) { cellPx.toDp() }
+        val gridDp = with(density) { (n * cellPx + (n - 1) * gapPx).toDp() }
+
+        Layout(
+            content = {
+                grid.forEachIndexed { row, rowList ->
+                    rowList.forEachIndexed { col, cell ->
+                        val pos = GridPos(row, col)
+                        val isSelected = state.selected == pos
+                        val isSwapping = pos == swapA || pos == swapB
+
+                        val targetOffsetX = remember(cell.id) { Animatable(0f) }
+                        val targetOffsetY = remember(cell.id) { Animatable(0f) }
+
+                        if (isSwapping && swapA != null && swapB != null) {
+                            val dx = if (pos == swapA) (swapB.col - swapA.col) * stride
+                                     else (swapA.col - swapB.col) * stride
+                            val dy = if (pos == swapA) (swapB.row - swapA.row) * stride
+                                     else (swapA.row - swapB.row) * stride
+                            LaunchedEffect(swapA, swapB) {
+                                targetOffsetX.snapTo(0f)
+                                targetOffsetY.snapTo(0f)
+                                val anim = tween<Float>(durationMillis = SWAP_DURATION_MS)
+                                coroutineScope {
+                                    launch { targetOffsetX.animateTo(dx, anim) }
+                                    launch { targetOffsetY.animateTo(dy, anim) }
+                                }
+                                if (pos == swapA) onSwapFinished()
+                            }
+                        } else {
+                            LaunchedEffect(Unit) {
+                                targetOffsetX.snapTo(0f)
+                                targetOffsetY.snapTo(0f)
+                            }
+                        }
+
+                        JellyItem(
+                            cell = cell,
+                            cellSize = cellDp,
+                            isSelected = isSelected,
+                            offsetX = targetOffsetX.value,
+                            offsetY = targetOffsetY.value,
+                            onClick = { onCellClick(pos) },
+                        )
+                    }
+                }
+            },
+            modifier = Modifier.size(gridDp),
+            measurePolicy = { measurables, _ ->
+                val cellConstraints = Constraints.fixed(cellPx.roundToInt(), cellPx.roundToInt())
+                val placeables = measurables.map { it.measure(cellConstraints) }
+                val gridSizePx = (n * cellPx + (n - 1) * gapPx).roundToInt()
+                layout(gridSizePx, gridSizePx) {
+                    placeables.forEachIndexed { index, placeable ->
+                        placeable.placeRelative(
+                            x = (index % n * stride).roundToInt(),
+                            y = (index / n * stride).roundToInt(),
+                        )
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun JellyItem(
+    cell: JellyCell,
+    cellSize: Dp,
+    isSelected: Boolean,
+    offsetX: Float,
+    offsetY: Float,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(cellSize)
+            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            .clickable(onClick = onClick)
+            .then(
+                if (isSelected) Modifier.border(3.dp, Color.White)
+                else Modifier
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(cell.type.toDrawableRes()),
+            contentDescription = "Jelly ${cell.type}",
+            modifier = Modifier.size(cellSize),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
+private fun Int.toDrawableRes(): DrawableResource = when (this) {
+    1 -> Res.drawable.jelly_1
+    2 -> Res.drawable.jelly_2
+    3 -> Res.drawable.jelly_3
+    4 -> Res.drawable.jelly_4
+    5 -> Res.drawable.jelly_5
+    else -> Res.drawable.jelly_6
+}
+
