@@ -1,0 +1,93 @@
+name: Build Multiplatform Artifacts
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-jar:
+    name: Desktop JAR (${{ matrix.os-name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os-name: Linux
+            artifact-name: desktop-jar-linux
+          - os: windows-latest
+            os-name: Windows
+            artifact-name: desktop-jar-windows
+          - os: macos-latest
+            os-name: macOS
+            artifact-name: desktop-jar-macos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build uber JAR
+        run: ./gradlew :composeApp:packageUberJarForCurrentOS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: composeApp/build/compose/jars/*.jar
+
+  android-apk:
+    name: Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        run: ./gradlew :androidApp:assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-debug
+          path: androidApp/build/outputs/apk/debug/*.apk
+
+  js-web:
+    name: JS Web Distribution
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build JS production bundle
+        run: ./gradlew :composeApp:jsBrowserDistribution
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: js-web-distribution
+          path: composeApp/build/dist/js/productionExecutable/
