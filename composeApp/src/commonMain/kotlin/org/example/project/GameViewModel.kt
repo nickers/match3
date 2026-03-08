@@ -3,112 +3,231 @@ package org.example.project
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import org.example.project.ecs.*
+import kotlin.math.abs
 import kotlin.random.Random
 
 const val GRID_SIZE = 7
-const val SWAP_DURATION_MS = 300   // configurable swap animation speed
+const val SWAP_DURATION_MS = 300
 
 class GameViewModel {
 
-    var state by mutableStateOf(initialState())
+    private val world = World {
+        with(MatchSystem())
+        with(GravitySystem())
+    }
+
+    private val posMapper = world.mapper<GridPositionComponent>()
+    private val typeMapper = world.mapper<JellyTypeComponent>()
+    private val selectedMapper = world.mapper<SelectedComponent>()
+    private val swappingMapper = world.mapper<SwappingComponent>()
+    private val fallingMapper = world.mapper<FallingComponent>()
+
+    private val matchSystem = world.getSystem<MatchSystem>()
+    private val gravitySystem = world.getSystem<GravitySystem>()
+
+    var state by mutableStateOf(GameState(grid = emptyList()))
         private set
 
     var isAnimating by mutableStateOf(false)
         private set
 
-    private var idCounter: Int = GRID_SIZE * GRID_SIZE
+    private var score = 0
 
-    private fun initialState(): GameState {
-        idCounter = 0
-        val grid = List(GRID_SIZE) {
-            List(GRID_SIZE) {
-                JellyCell(type = Random.nextInt(1, 7), id = idCounter++)
+    init {
+        initializeGrid()
+        state = buildSnapshot()
+    }
+
+    private fun initializeGrid() {
+        for (row in 0 until GRID_SIZE) {
+            for (col in 0 until GRID_SIZE) {
+                val entity = world.createEntity()
+                world.addComponent(entity, GridPositionComponent(row, col))
+                world.addComponent(entity, JellyTypeComponent(Random.nextInt(1, 7)))
             }
         }
-        return GameState(grid = grid)
     }
 
     fun onCellClick(pos: GridPos) {
         if (isAnimating) return
-        val current = state
-        val sel = current.selected
+
+        val clickedEntity = findEntityAt(pos.row, pos.col) ?: return
+        val selectedEntity = findSelectedEntity()
 
         when {
-            sel == null -> {
-                state = current.copy(selected = pos)
+            selectedEntity == null -> {
+                selectedMapper.set(clickedEntity, SelectedComponent())
             }
-            sel == pos -> {
-                state = current.copy(selected = null)
+            selectedEntity == clickedEntity -> {
+                selectedMapper.remove(clickedEntity)
             }
-            current.isAdjacent(sel, pos) -> {
-                triggerSwap(sel, pos)
+            isAdjacentEntities(selectedEntity, clickedEntity) -> {
+                selectedMapper.remove(selectedEntity)
+                triggerSwap(selectedEntity, clickedEntity)
             }
             else -> {
-                state = current.copy(selected = pos)
+                selectedMapper.remove(selectedEntity)
+                selectedMapper.set(clickedEntity, SelectedComponent())
             }
         }
+
+        state = buildSnapshot()
     }
 
-    private fun triggerSwap(a: GridPos, b: GridPos) {
+    private fun triggerSwap(entityA: Int, entityB: Int) {
         isAnimating = true
-        state = state.copy(selected = null, swappingA = a, swappingB = b)
+        val posA = posMapper[entityA]!!
+        val posB = posMapper[entityB]!!
+
+        swappingMapper.set(entityA, SwappingComponent(
+            sourceRow = posA.row, sourceCol = posA.col,
+            targetRow = posB.row, targetCol = posB.col,
+        ))
+        swappingMapper.set(entityB, SwappingComponent(
+            sourceRow = posB.row, sourceCol = posB.col,
+            targetRow = posA.row, targetCol = posA.col,
+        ))
+
+        state = buildSnapshot()
     }
 
-    /** Called by the UI after the swap animation completes. */
     fun onSwapAnimationFinished() {
-        val a = state.swappingA ?: return
-        val b = state.swappingB ?: return
-        val swappedState = state.swapped(a, b).copy(swappingA = null, swappingB = null)
-        val matches = swappedState.findMatches()
+        val swappingEntities = world.getEntitiesForAspect(Aspect.all(SwappingComponent::class))
+        if (swappingEntities.size != 2) return
 
+        val eA = swappingEntities[0]
+        val eB = swappingEntities[1]
+        val swapA = swappingMapper[eA]!!
+        val swapB = swappingMapper[eB]!!
+
+        posMapper[eA]!!.row = swapA.targetRow
+        posMapper[eA]!!.col = swapA.targetCol
+        posMapper[eB]!!.row = swapB.targetRow
+        posMapper[eB]!!.col = swapB.targetCol
+
+        swappingMapper.remove(eA)
+        swappingMapper.remove(eB)
+
+        val matches = matchSystem.findMatches(GRID_SIZE)
         if (matches.isEmpty()) {
-            // Invalid move: revert swap
-            state = state.swapped(b, a).copy(swappingA = null, swappingB = null)
+            posMapper[eA]!!.row = swapA.sourceRow
+            posMapper[eA]!!.col = swapA.sourceCol
+            posMapper[eB]!!.row = swapB.sourceRow
+            posMapper[eB]!!.col = swapB.sourceCol
             isAnimating = false
+            state = buildSnapshot()
             return
         }
 
-        processMatches(swappedState)
+        processMatches()
     }
 
-    private fun processMatches(currentState: GameState) {
-        var s = currentState
-        var matches = s.findMatches()
-
+    private fun processMatches() {
+        var matches = matchSystem.findMatches(GRID_SIZE)
         while (matches.isNotEmpty()) {
-            val result = s.removeMatchesAndApplyGravity(matches, idCounter)
-            idCounter = result.nextIdCounter
+            val result = gravitySystem.applyGravity(matches, GRID_SIZE)
+            score += result.scoreGained
 
-            s = s.copy(
-                grid = result.grid,
-                score = result.newScore,
-                fallingCells = result.fallingCells,
-            )
-            if (result.fallingCells.isEmpty()) {
-                matches = s.findMatches()
-            } else {
-                state = s
-                return  // UI will call onFallAnimationFinished when done
+            if (result.hasFallingCells) {
+                state = buildSnapshot()
+                return
             }
+            matches = matchSystem.findMatches(GRID_SIZE)
         }
 
-        state = s.copy(fallingCells = emptyMap())
+        state = buildSnapshot()
         isAnimating = false
     }
 
-    /** Called by the UI after all fall animations complete. */
     fun onFallAnimationFinished() {
-        val s = state
-        if (s.fallingCells.isEmpty()) {
+        val aspect = Aspect.all(FallingComponent::class)
+        if (world.getEntitiesForAspect(aspect).isEmpty()) {
             isAnimating = false
             return
         }
-        state = s.copy(fallingCells = emptyMap())
-        val matches = state.findMatches()
+
+        gravitySystem.clearFallingComponents()
+
+        val matches = matchSystem.findMatches(GRID_SIZE)
         if (matches.isNotEmpty()) {
-            processMatches(state)
+            processMatches()
         } else {
+            state = buildSnapshot()
             isAnimating = false
         }
+    }
+
+    // ---- ECS queries ----
+
+    private fun findEntityAt(row: Int, col: Int): Int? {
+        val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
+        return world.getEntitiesForAspect(aspect).firstOrNull {
+            val pos = posMapper[it]!!
+            pos.row == row && pos.col == col
+        }
+    }
+
+    private fun findSelectedEntity(): Int? {
+        return world.getEntitiesForAspect(Aspect.all(SelectedComponent::class)).firstOrNull()
+    }
+
+    private fun isAdjacentEntities(entityA: Int, entityB: Int): Boolean {
+        val posA = posMapper[entityA]!!
+        val posB = posMapper[entityB]!!
+        val dr = abs(posA.row - posB.row)
+        val dc = abs(posA.col - posB.col)
+        return (dr == 1 && dc == 0) || (dr == 0 && dc == 1)
+    }
+
+    /**
+     * Projects the current ECS world into an immutable [GameState] snapshot
+     * that the Compose UI layer can render.
+     */
+    private fun buildSnapshot(): GameState {
+        val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
+        val entities = world.getEntitiesForAspect(aspect)
+
+        val grid = Array(GRID_SIZE) { arrayOfNulls<JellyCell>(GRID_SIZE) }
+        entities.forEach { entityId ->
+            val pos = posMapper[entityId]!!
+            val type = typeMapper[entityId]!!.type
+            if (pos.row in 0 until GRID_SIZE && pos.col in 0 until GRID_SIZE) {
+                grid[pos.row][pos.col] = JellyCell(type = type, id = entityId)
+            }
+        }
+
+        val gridList = grid.map { row ->
+            row.map { it ?: JellyCell(type = 1, id = -1) }
+        }
+
+        val selectedEntity = findSelectedEntity()
+        val selected = selectedEntity?.let { posMapper[it] }?.let { GridPos(it.row, it.col) }
+
+        val swappingEntities = world.getEntitiesForAspect(Aspect.all(SwappingComponent::class))
+        var swappingA: GridPos? = null
+        var swappingB: GridPos? = null
+        if (swappingEntities.size == 2) {
+            val posA = posMapper[swappingEntities[0]]!!
+            val posB = posMapper[swappingEntities[1]]!!
+            swappingA = GridPos(posA.row, posA.col)
+            swappingB = GridPos(posB.row, posB.col)
+        }
+
+        val fallingEntities = world.getEntitiesForAspect(Aspect.all(FallingComponent::class))
+        val fallingCells = mutableMapOf<Int, Pair<Int, Int>>()
+        fallingEntities.forEach { entityId ->
+            val falling = fallingMapper[entityId]!!
+            fallingCells[entityId] = falling.fromRow to falling.toRow
+        }
+
+        return GameState(
+            grid = gridList,
+            selected = selected,
+            swappingA = swappingA,
+            swappingB = swappingB,
+            score = score,
+            fallingCells = fallingCells,
+        )
     }
 }
