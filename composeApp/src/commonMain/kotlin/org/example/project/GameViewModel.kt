@@ -8,7 +8,7 @@ import kotlin.math.abs
 import kotlin.random.Random
 
 const val GRID_SIZE = 7
-const val SWAP_DURATION_MS = 300
+const val SWAP_DURATION_MS = 900
 
 class GameViewModel {
 

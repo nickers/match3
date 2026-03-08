@@ -109,9 +109,19 @@ private fun GameGrid(
                         val pos = GridPos(row, col)
                         val isSelected = state.selected == pos
                         val isSwapping = pos == swapA || pos == swapB
+                        val fallInfo = fallingCells[cell.id]
 
+                        // Initialize the Y Animatable at the correct fall offset
+                        // so the very first frame already shows the cell at its
+                        // pre-animation position (eliminates the one-frame flicker
+                        // that occurred when Animatable started at 0).
+                        val initialOffsetY = if (fallInfo != null && !isSwapping) {
+                            (fallInfo.first - fallInfo.second) * stride
+                        } else {
+                            0f
+                        }
                         val targetOffsetX = remember(cell.id) { Animatable(0f) }
-                        val targetOffsetY = remember(cell.id) { Animatable(0f) }
+                        val targetOffsetY = remember(cell.id) { Animatable(initialOffsetY) }
 
                         if (isSwapping && swapA != null && swapB != null) {
                             val dx = if (pos == swapA) (swapB.col - swapA.col) * stride
@@ -128,22 +138,17 @@ private fun GameGrid(
                                 }
                                 if (pos == swapA) onSwapFinished()
                             }
+                        } else if (fallInfo != null) {
+                            val dy = (fallInfo.first - fallInfo.second) * stride
+                            LaunchedEffect(fallingCells) {
+                                targetOffsetY.snapTo(dy)
+                                val anim = tween<Float>(durationMillis = SWAP_DURATION_MS)
+                                targetOffsetY.animateTo(0f, anim)
+                            }
                         } else {
-                            val fallInfo = fallingCells[cell.id]
-                            if (fallInfo != null) {
-                                val (fromRow, toRow) = fallInfo
-                                val dy = (fromRow - toRow) * stride
-                                LaunchedEffect(fallingCells) {
-                                    targetOffsetX.snapTo(0f)
-                                    targetOffsetY.snapTo(dy)
-                                    val anim = tween<Float>(durationMillis = SWAP_DURATION_MS)
-                                    targetOffsetY.animateTo(0f, anim)
-                                }
-                            } else {
-                                LaunchedEffect(Unit) {
-                                    targetOffsetX.snapTo(0f)
-                                    targetOffsetY.snapTo(0f)
-                                }
+                            LaunchedEffect(Unit) {
+                                targetOffsetX.snapTo(0f)
+                                targetOffsetY.snapTo(0f)
                             }
                         }
 
