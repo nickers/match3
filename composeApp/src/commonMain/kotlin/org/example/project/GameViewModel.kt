@@ -101,20 +101,16 @@ class GameViewModel {
         val swapA = swappingMapper[eA]!!
         val swapB = swappingMapper[eB]!!
 
-        posMapper[eA]!!.row = swapA.targetRow
-        posMapper[eA]!!.col = swapA.targetCol
-        posMapper[eB]!!.row = swapB.targetRow
-        posMapper[eB]!!.col = swapB.targetCol
+        posMapper[eA]!!.setTo(swapA.targetPosition)
+        posMapper[eB]!!.setTo(swapB.targetPosition)
 
         swappingMapper.remove(eA)
         swappingMapper.remove(eB)
 
         val matches = matchSystem.findMatches(GRID_SIZE)
         if (matches.isEmpty()) {
-            posMapper[eA]!!.row = swapA.sourceRow
-            posMapper[eA]!!.col = swapA.sourceCol
-            posMapper[eB]!!.row = swapB.sourceRow
-            posMapper[eB]!!.col = swapB.sourceCol
+            posMapper[eA]!!.setTo(swapA.sourcePosition)
+            posMapper[eB]!!.setTo(swapB.sourcePosition)
             isAnimating = false
             state = buildSnapshot()
             return

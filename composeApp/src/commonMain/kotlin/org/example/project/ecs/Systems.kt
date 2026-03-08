@@ -133,10 +133,9 @@ class GravitySystem : BaseSystem() {
 
             for (i in 0 until numNew) {
                 val entityId = world.createEntity()
-                val newRow = i
-                world.addComponent(entityId, GridPositionComponent(row = newRow, col = col))
+                world.addComponent(entityId, GridPositionComponent(row = i, col = col))
                 world.addComponent(entityId, JellyTypeComponent(type = random.nextInt(1, 7)))
-                fallingMapper.set(entityId, FallingComponent(fromRow = -(numNew - i), toRow = newRow))
+                fallingMapper.set(entityId, FallingComponent(fromRow = -(numNew - i), toRow = i))
                 hasFalling = true
             }
         }
