@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,9 +76,8 @@ private fun GameGrid(
     onSwapFinished: () -> Unit,
     onFallFinished: () -> Unit,
 ) {
-    val swapA = state.swappingA
-    val swapB = state.swappingB
     val grid = state.grid
+    val swappingCells = state.swappingCells
     val fallingCells = state.fallingCells
 
     // BoxWithConstraints gives us maxWidth/maxHeight in Dp during composition,
@@ -94,6 +95,8 @@ private fun GameGrid(
         val stride = cellPx + gapPx
         val cellDp = with(density) { cellPx.toDp() }
         val gridDp = with(density) { (n * cellPx + (n - 1) * gapPx).toDp() }
+        val swapCompletionDispatched = remember(swappingCells) { mutableStateOf(false) }
+        val completedSwapIds = remember(swappingCells) { mutableSetOf<Int>() }
 
         LaunchedEffect(fallingCells) {
             if (fallingCells.isNotEmpty()) {
@@ -106,60 +109,68 @@ private fun GameGrid(
             content = {
                 grid.forEachIndexed { row, rowList ->
                     rowList.forEachIndexed { col, cell ->
-                        val pos = GridPos(row, col)
-                        val isSelected = state.selected == pos
-                        val isSwapping = pos == swapA || pos == swapB
-                        val fallInfo = fallingCells[cell.id]
+                        key(cell.id) {
+                            val pos = GridPos(row, col)
+                            val isSelected = state.selected == pos
+                            val swapInfo = swappingCells[cell.id]
+                            val isSwapping = swapInfo != null
+                            val fallInfo = fallingCells[cell.id]
 
-                        // Initialize the Y Animatable at the correct fall offset
-                        // so the very first frame already shows the cell at its
-                        // pre-animation position (eliminates the one-frame flicker
-                        // that occurred when Animatable started at 0).
-                        val initialOffsetY = if (fallInfo != null && !isSwapping) {
-                            (fallInfo.first - fallInfo.second) * stride
-                        } else {
-                            0f
-                        }
-                        val targetOffsetX = remember(cell.id) { Animatable(0f) }
-                        val targetOffsetY = remember(cell.id) { Animatable(initialOffsetY) }
+                            // Initialize the Y Animatable at the correct fall offset
+                            // so the very first frame already shows the cell at its
+                            // pre-animation position (eliminates the one-frame flicker
+                            // that occurred when Animatable started at 0).
+                            val initialOffsetY = if (fallInfo != null && !isSwapping) {
+                                (fallInfo.first - fallInfo.second) * stride
+                            } else {
+                                0f
+                            }
+                            val targetOffsetX = remember(swapInfo) { Animatable(0f) }
+                            val targetOffsetY = remember(swapInfo, fallInfo) { Animatable(initialOffsetY) }
 
-                        if (isSwapping && swapA != null && swapB != null) {
-                            val dx = if (pos == swapA) (swapB.col - swapA.col) * stride
-                                     else (swapA.col - swapB.col) * stride
-                            val dy = if (pos == swapA) (swapB.row - swapA.row) * stride
-                                     else (swapA.row - swapB.row) * stride
-                            LaunchedEffect(swapA, swapB) {
-                                targetOffsetX.snapTo(0f)
-                                targetOffsetY.snapTo(0f)
-                                val anim = tween<Float>(durationMillis = SWAP_DURATION_MS)
-                                coroutineScope {
-                                    launch { targetOffsetX.animateTo(dx, anim) }
-                                    launch { targetOffsetY.animateTo(dy, anim) }
+                            if (swapInfo != null) {
+                                val dx = (swapInfo.to.col - swapInfo.from.col) * stride
+                                val dy = (swapInfo.to.row - swapInfo.from.row) * stride
+                                LaunchedEffect(swapInfo) {
+                                    targetOffsetX.snapTo(0f)
+                                    targetOffsetY.snapTo(0f)
+                                    val anim = tween<Float>(durationMillis = SWAP_DURATION_MS)
+                                    coroutineScope {
+                                        launch { targetOffsetX.animateTo(dx, anim) }
+                                        launch { targetOffsetY.animateTo(dy, anim) }
+                                    }
+
+                                    if (completedSwapIds.add(cell.id) &&
+                                        !swapCompletionDispatched.value &&
+                                        completedSwapIds.containsAll(swappingCells.keys)
+                                    ) {
+                                        swapCompletionDispatched.value = true
+                                        onSwapFinished()
+                                    }
                                 }
-                                if (pos == swapA) onSwapFinished()
+                            } else if (fallInfo != null) {
+                                val dy = (fallInfo.first - fallInfo.second) * stride
+                                LaunchedEffect(fallingCells) {
+                                    targetOffsetY.snapTo(dy)
+                                    val anim = tween<Float>(durationMillis = SWAP_DURATION_MS)
+                                    targetOffsetY.animateTo(0f, anim)
+                                }
+                            } else {
+                                LaunchedEffect(Unit) {
+                                    targetOffsetX.snapTo(0f)
+                                    targetOffsetY.snapTo(0f)
+                                }
                             }
-                        } else if (fallInfo != null) {
-                            val dy = (fallInfo.first - fallInfo.second) * stride
-                            LaunchedEffect(fallingCells) {
-                                targetOffsetY.snapTo(dy)
-                                val anim = tween<Float>(durationMillis = SWAP_DURATION_MS)
-                                targetOffsetY.animateTo(0f, anim)
-                            }
-                        } else {
-                            LaunchedEffect(Unit) {
-                                targetOffsetX.snapTo(0f)
-                                targetOffsetY.snapTo(0f)
-                            }
-                        }
 
-                        JellyItem(
-                            cell = cell,
-                            cellSize = cellDp,
-                            isSelected = isSelected,
-                            offsetX = targetOffsetX.value,
-                            offsetY = targetOffsetY.value,
-                            onClick = { onCellClick(pos) },
-                        )
+                            JellyItem(
+                                cell = cell,
+                                cellSize = cellDp,
+                                isSelected = isSelected,
+                                offsetX = targetOffsetX.value,
+                                offsetY = targetOffsetY.value,
+                                onClick = { onCellClick(pos) },
+                            )
+                        }
                     }
                 }
             },
