@@ -16,8 +16,10 @@ class GameViewModel {
     var isAnimating by mutableStateOf(false)
         private set
 
+    private var idCounter: Int = GRID_SIZE * GRID_SIZE
+
     private fun initialState(): GameState {
-        var idCounter = 0
+        idCounter = 0
         val grid = List(GRID_SIZE) {
             List(GRID_SIZE) {
                 JellyCell(type = Random.nextInt(1, 7), id = idCounter++)
@@ -56,7 +58,57 @@ class GameViewModel {
     fun onSwapAnimationFinished() {
         val a = state.swappingA ?: return
         val b = state.swappingB ?: return
-        state = state.swapped(a, b).copy(swappingA = null, swappingB = null)
+        val swappedState = state.swapped(a, b).copy(swappingA = null, swappingB = null)
+        val matches = swappedState.findMatches()
+
+        if (matches.isEmpty()) {
+            // Invalid move: revert swap
+            state = state.swapped(b, a).copy(swappingA = null, swappingB = null)
+            isAnimating = false
+            return
+        }
+
+        processMatches(swappedState)
+    }
+
+    private fun processMatches(currentState: GameState) {
+        var s = currentState
+        var matches = s.findMatches()
+
+        while (matches.isNotEmpty()) {
+            val result = s.removeMatchesAndApplyGravity(matches, idCounter)
+            idCounter = result.nextIdCounter
+
+            s = s.copy(
+                grid = result.grid,
+                score = result.newScore,
+                fallingCells = result.fallingCells,
+            )
+            if (result.fallingCells.isEmpty()) {
+                matches = s.findMatches()
+            } else {
+                state = s
+                return  // UI will call onFallAnimationFinished when done
+            }
+        }
+
+        state = s.copy(fallingCells = emptyMap())
         isAnimating = false
+    }
+
+    /** Called by the UI after all fall animations complete. */
+    fun onFallAnimationFinished() {
+        val s = state
+        if (s.fallingCells.isEmpty()) {
+            isAnimating = false
+            return
+        }
+        state = s.copy(fallingCells = emptyMap())
+        val matches = state.findMatches()
+        if (matches.isNotEmpty()) {
+            processMatches(state)
+        } else {
+            isAnimating = false
+        }
     }
 }

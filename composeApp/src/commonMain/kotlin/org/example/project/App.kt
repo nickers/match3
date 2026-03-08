@@ -32,6 +32,7 @@ import kotlinproject.composeapp.generated.resources.jelly_3
 import kotlinproject.composeapp.generated.resources.jelly_4
 import kotlinproject.composeapp.generated.resources.jelly_5
 import kotlinproject.composeapp.generated.resources.jelly_6
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.DrawableResource
@@ -59,6 +60,7 @@ fun App() {
                 padding = GRID_PADDING,
                 onCellClick = vm::onCellClick,
                 onSwapFinished = vm::onSwapAnimationFinished,
+                onFallFinished = vm::onFallAnimationFinished,
             )
         }
     }
@@ -70,10 +72,12 @@ private fun GameGrid(
     padding: Dp,
     onCellClick: (GridPos) -> Unit,
     onSwapFinished: () -> Unit,
+    onFallFinished: () -> Unit,
 ) {
     val swapA = state.swappingA
     val swapB = state.swappingB
     val grid = state.grid
+    val fallingCells = state.fallingCells
 
     // BoxWithConstraints gives us maxWidth/maxHeight in Dp during composition,
     // so stride is available where LaunchedEffect runs.
@@ -90,6 +94,13 @@ private fun GameGrid(
         val stride = cellPx + gapPx
         val cellDp = with(density) { cellPx.toDp() }
         val gridDp = with(density) { (n * cellPx + (n - 1) * gapPx).toDp() }
+
+        LaunchedEffect(fallingCells) {
+            if (fallingCells.isNotEmpty()) {
+                delay(SWAP_DURATION_MS.toLong())
+                onFallFinished()
+            }
+        }
 
         Layout(
             content = {
@@ -118,9 +129,21 @@ private fun GameGrid(
                                 if (pos == swapA) onSwapFinished()
                             }
                         } else {
-                            LaunchedEffect(Unit) {
-                                targetOffsetX.snapTo(0f)
-                                targetOffsetY.snapTo(0f)
+                            val fallInfo = fallingCells[cell.id]
+                            if (fallInfo != null) {
+                                val (fromRow, toRow) = fallInfo
+                                val dy = (fromRow - toRow) * stride
+                                LaunchedEffect(fallingCells) {
+                                    targetOffsetX.snapTo(0f)
+                                    targetOffsetY.snapTo(dy)
+                                    val anim = tween<Float>(durationMillis = SWAP_DURATION_MS)
+                                    targetOffsetY.animateTo(0f, anim)
+                                }
+                            } else {
+                                LaunchedEffect(Unit) {
+                                    targetOffsetX.snapTo(0f)
+                                    targetOffsetY.snapTo(0f)
+                                }
                             }
                         }
 
