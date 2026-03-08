@@ -2,6 +2,12 @@ package org.example.project
 
 data class GridPos(val row: Int, val col: Int)
 
+data class SwapAnimation(
+    val from: GridPos,
+    val to: GridPos,
+    val isReturning: Boolean = false,
+)
+
 data class JellyCell(
     val type: Int,   // 1..6, maps to jelly_1..jelly_6
     val id: Int,     // stable entity identity for animation keys
@@ -17,8 +23,7 @@ typealias FallingCells = Map<Int, Pair<Int, Int>>
 data class GameState(
     val grid: List<List<JellyCell>>,
     val selected: GridPos? = null,
-    val swappingA: GridPos? = null,
-    val swappingB: GridPos? = null,
+    val swappingCells: Map<Int, SwapAnimation> = emptyMap(),
     val score: Int = 0,
     val fallingCells: FallingCells = emptyMap(),
 )

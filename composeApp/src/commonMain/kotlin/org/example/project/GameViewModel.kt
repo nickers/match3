@@ -10,7 +10,9 @@ import kotlin.random.Random
 const val GRID_SIZE = 7
 const val SWAP_DURATION_MS = 900
 
-class GameViewModel {
+class GameViewModel(
+    private val initialGrid: List<List<Int>>? = null,
+) {
 
     private val world = World {
         with(MatchSystem())
@@ -40,11 +42,19 @@ class GameViewModel {
     }
 
     private fun initializeGrid() {
+        val seededGrid = initialGrid
+        require(seededGrid == null || seededGrid.size == GRID_SIZE) {
+            "Initial grid must be $GRID_SIZE x $GRID_SIZE"
+        }
+
         for (row in 0 until GRID_SIZE) {
             for (col in 0 until GRID_SIZE) {
                 val entity = world.createEntity()
                 world.addComponent(entity, GridPositionComponent(row, col))
-                world.addComponent(entity, JellyTypeComponent(Random.nextInt(1, 7)))
+                val type = seededGrid?.get(row)?.also {
+                    require(it.size == GRID_SIZE) { "Initial grid must be $GRID_SIZE x $GRID_SIZE" }
+                }?.get(col) ?: Random.nextInt(1, 7)
+                world.addComponent(entity, JellyTypeComponent(type))
             }
         }
     }
@@ -104,18 +114,37 @@ class GameViewModel {
         posMapper[eA]!!.setTo(swapA.targetPosition)
         posMapper[eB]!!.setTo(swapB.targetPosition)
 
-        swappingMapper.remove(eA)
-        swappingMapper.remove(eB)
+        if (swapA.isReturning && swapB.isReturning) {
+            swappingMapper.remove(eA)
+            swappingMapper.remove(eB)
+            state = buildSnapshot()
+            isAnimating = false
+            return
+        }
 
         val matches = matchSystem.findMatches(GRID_SIZE)
         if (matches.isEmpty()) {
-            posMapper[eA]!!.setTo(swapA.sourcePosition)
-            posMapper[eB]!!.setTo(swapB.sourcePosition)
-            isAnimating = false
+            swappingMapper.set(eA, SwappingComponent(
+                sourceRow = swapA.targetRow,
+                sourceCol = swapA.targetCol,
+                targetRow = swapA.sourceRow,
+                targetCol = swapA.sourceCol,
+                isReturning = true,
+            ))
+            swappingMapper.set(eB, SwappingComponent(
+                sourceRow = swapB.targetRow,
+                sourceCol = swapB.targetCol,
+                targetRow = swapB.sourceRow,
+                targetCol = swapB.sourceCol,
+                isReturning = true,
+            ))
+
             state = buildSnapshot()
             return
         }
 
+        swappingMapper.remove(eA)
+        swappingMapper.remove(eB)
         processMatches()
     }
 
@@ -200,14 +229,18 @@ class GameViewModel {
         val selectedEntity = findSelectedEntity()
         val selected = selectedEntity?.let { posMapper[it] }?.let { GridPos(it.row, it.col) }
 
-        val swappingEntities = world.getEntitiesForAspect(Aspect.all(SwappingComponent::class))
-        var swappingA: GridPos? = null
-        var swappingB: GridPos? = null
-        if (swappingEntities.size == 2) {
-            val posA = posMapper[swappingEntities[0]]!!
-            val posB = posMapper[swappingEntities[1]]!!
-            swappingA = GridPos(posA.row, posA.col)
-            swappingB = GridPos(posB.row, posB.col)
+        val swappingCells = buildMap {
+            world.getEntitiesForAspect(Aspect.all(SwappingComponent::class)).forEach { entityId ->
+                val swapping = swappingMapper[entityId]!!
+                put(
+                    entityId,
+                    SwapAnimation(
+                        from = GridPos(swapping.sourceRow, swapping.sourceCol),
+                        to = GridPos(swapping.targetRow, swapping.targetCol),
+                        isReturning = swapping.isReturning,
+                    ),
+                )
+            }
         }
 
         val fallingEntities = world.getEntitiesForAspect(Aspect.all(FallingComponent::class))
@@ -220,8 +253,7 @@ class GameViewModel {
         return GameState(
             grid = gridList,
             selected = selected,
-            swappingA = swappingA,
-            swappingB = swappingB,
+            swappingCells = swappingCells,
             score = score,
             fallingCells = fallingCells,
         )

@@ -32,6 +32,7 @@ data class SwappingComponent(
     val sourceCol: Int,
     val targetRow: Int,
     val targetCol: Int,
+    val isReturning: Boolean = false,
 ) : Component {
 
     /** Target grid position for the swap (for use with [GridPositionComponent.setTo]). */

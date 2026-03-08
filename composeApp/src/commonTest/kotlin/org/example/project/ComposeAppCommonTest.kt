@@ -269,3 +269,49 @@ class GravitySystemTest {
         assertEquals(0, world.getEntitiesForAspect(Aspect.all(FallingComponent::class)).size)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Game ViewModel Tests
+// ---------------------------------------------------------------------------
+
+class GameViewModelTest {
+
+    private val invalidSwapGrid = listOf(
+        listOf(1, 2, 3, 4, 5, 6, 1),
+        listOf(2, 3, 4, 5, 6, 1, 2),
+        listOf(3, 4, 5, 6, 1, 2, 3),
+        listOf(4, 5, 6, 1, 2, 3, 4),
+        listOf(5, 6, 1, 2, 3, 4, 5),
+        listOf(6, 1, 2, 3, 4, 5, 6),
+        listOf(1, 2, 3, 4, 5, 6, 1),
+    )
+
+    @Test
+    fun invalidSwap_startsReturnAnimationBeforeRestoringGrid() {
+        val viewModel = GameViewModel(initialGrid = invalidSwapGrid)
+
+        viewModel.onCellClick(GridPos(0, 0))
+        viewModel.onCellClick(GridPos(0, 1))
+
+        assertTrue(viewModel.isAnimating)
+        assertEquals(2, viewModel.state.swappingCells.size)
+        assertTrue(viewModel.state.swappingCells.values.none { it.isReturning })
+
+        viewModel.onSwapAnimationFinished()
+
+        val returnAnimations = viewModel.state.swappingCells.values
+        assertEquals(2, returnAnimations.size)
+        assertTrue(returnAnimations.all { it.isReturning })
+        assertEquals(setOf(GridPos(0, 1), GridPos(0, 0)), returnAnimations.map { it.from }.toSet())
+        assertEquals(2, viewModel.state.grid[0][0].type)
+        assertEquals(1, viewModel.state.grid[0][1].type)
+
+        viewModel.onSwapAnimationFinished()
+
+        assertFalse(viewModel.isAnimating)
+        assertTrue(viewModel.state.swappingCells.isEmpty())
+        assertEquals(1, viewModel.state.grid[0][0].type)
+        assertEquals(2, viewModel.state.grid[0][1].type)
+        assertEquals(0, viewModel.state.score)
+    }
+}
