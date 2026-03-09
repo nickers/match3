@@ -276,6 +276,34 @@ class GravitySystemTest {
 
 class GameViewModelTest {
 
+    @Test
+    fun initialBoard_hasNoMatches() {
+        repeat(50) {
+            val vm = GameViewModel()
+            val grid = vm.state.grid
+            for (r in grid.indices) {
+                var c = 0
+                while (c < grid[r].size) {
+                    val t = grid[r][c].type
+                    var len = 1
+                    while (c + len < grid[r].size && grid[r][c + len].type == t) len++
+                    assertTrue(len < 3, "Horizontal match at row=$r col=$c len=$len type=$t")
+                    c += len
+                }
+            }
+            for (c in grid[0].indices) {
+                var r = 0
+                while (r < grid.size) {
+                    val t = grid[r][c].type
+                    var len = 1
+                    while (r + len < grid.size && grid[r + len][c].type == t) len++
+                    assertTrue(len < 3, "Vertical match at row=$r col=$c len=$len type=$t")
+                    r += len
+                }
+            }
+        }
+    }
+
     private val invalidSwapGrid = listOf(
         listOf(1, 2, 3, 4, 5, 6, 1),
         listOf(2, 3, 4, 5, 6, 1, 2),

@@ -57,6 +57,35 @@ class GameViewModel(
                 world.addComponent(entity, JellyTypeComponent(type))
             }
         }
+
+        if (seededGrid == null) {
+            eliminateInitialMatches()
+        }
+    }
+
+    private fun eliminateInitialMatches() {
+        var matches = matchSystem.findMatches(GRID_SIZE)
+        while (matches.isNotEmpty()) {
+            val entityId = matches.random()
+            val pos = posMapper[entityId]!!
+            val neighborTypes = neighborTypes(pos.row, pos.col)
+            val candidates = (1..6).filter { it !in neighborTypes }
+            val newType = candidates.random()
+            typeMapper.set(entityId, JellyTypeComponent(newType))
+            matches = matchSystem.findMatches(GRID_SIZE)
+        }
+    }
+
+    private fun neighborTypes(row: Int, col: Int): Set<Int> {
+        val types = mutableSetOf<Int>()
+        for ((dr, dc) in listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)) {
+            val nr = row + dr
+            val nc = col + dc
+            if (nr in 0 until GRID_SIZE && nc in 0 until GRID_SIZE) {
+                findEntityAt(nr, nc)?.let { types.add(typeMapper[it]!!.type) }
+            }
+        }
+        return types
     }
 
     fun onCellClick(pos: GridPos) {
