@@ -144,7 +144,7 @@ private fun GameGrid(
                         val startPos = GridPos(row, col)
                         val pointerId = down.id
 
-                        var isDragging = false
+                        var everExceededThreshold = false
 
                         while (true) {
                             val event = awaitPointerEvent()
@@ -152,9 +152,9 @@ private fun GameGrid(
 
                             if (!change.pressed) {
                                 val currentDrag = dragState
-                                if (isDragging && currentDrag != null) {
+                                if (currentDrag != null) {
                                     onDragSwap(currentDrag.sourcePos, currentDrag.targetPos)
-                                } else if (!isDragging) {
+                                } else if (!everExceededThreshold) {
                                     onCellClick(startPos)
                                 }
                                 dragState = null
@@ -162,27 +162,31 @@ private fun GameGrid(
                                 break
                             }
 
-                            if (!isDragging) {
-                                val dx = change.position.x - startX
-                                val dy = change.position.y - startY
-                                if (abs(dx) > threshold || abs(dy) > threshold) {
-                                    isDragging = true
-                                    val direction = if (abs(dx) > abs(dy)) {
-                                        if (dx > 0) DragDirection.RIGHT else DragDirection.LEFT
-                                    } else {
-                                        if (dy > 0) DragDirection.DOWN else DragDirection.UP
-                                    }
-                                    val target = when (direction) {
-                                        DragDirection.UP -> GridPos(row - 1, col)
-                                        DragDirection.DOWN -> GridPos(row + 1, col)
-                                        DragDirection.LEFT -> GridPos(row, col - 1)
-                                        DragDirection.RIGHT -> GridPos(row, col + 1)
-                                    }
-                                    if (target.row in 0 until n && target.col in 0 until n) {
-                                        dragState = DragInfo(startPos, direction, target)
-                                    }
+                            val dx = change.position.x - startX
+                            val dy = change.position.y - startY
+
+                            if (abs(dx) > threshold || abs(dy) > threshold) {
+                                everExceededThreshold = true
+                                val direction = if (abs(dx) > abs(dy)) {
+                                    if (dx > 0) DragDirection.RIGHT else DragDirection.LEFT
+                                } else {
+                                    if (dy > 0) DragDirection.DOWN else DragDirection.UP
                                 }
+                                val target = when (direction) {
+                                    DragDirection.UP -> GridPos(row - 1, col)
+                                    DragDirection.DOWN -> GridPos(row + 1, col)
+                                    DragDirection.LEFT -> GridPos(row, col - 1)
+                                    DragDirection.RIGHT -> GridPos(row, col + 1)
+                                }
+                                if (target.row in 0 until n && target.col in 0 until n) {
+                                    dragState = DragInfo(startPos, direction, target)
+                                } else {
+                                    dragState = null
+                                }
+                            } else {
+                                dragState = null
                             }
+
                             change.consume()
                         }
                     }
