@@ -277,7 +277,7 @@ class GravitySystemTest {
 class GameViewModelTest {
 
     @Test
-    fun initialBoard_hasNoMatches() {
+    fun initialBoard_hasNoMatchesAndHasValidMove() {
         repeat(50) {
             val vm = GameViewModel()
             val grid = vm.state.grid
@@ -301,7 +301,38 @@ class GameViewModelTest {
                     r += len
                 }
             }
+            assertTrue(vm.hasValidMove(), "Board should have at least one valid move")
         }
+    }
+
+    @Test
+    fun hasValidMove_trueWhenMoveExists() {
+        val grid = listOf(
+            listOf(1, 2, 1, 2, 1, 2, 1),
+            listOf(2, 1, 1, 1, 2, 1, 2),  // swapping (1,1) right gives 1,1,1 at cols 1-3
+            listOf(1, 2, 1, 2, 1, 2, 1),
+            listOf(2, 1, 2, 1, 2, 1, 2),
+            listOf(1, 2, 1, 2, 1, 2, 1),
+            listOf(2, 1, 2, 1, 2, 1, 2),
+            listOf(1, 2, 1, 2, 1, 2, 1),
+        )
+        val vm = GameViewModel(initialGrid = grid)
+        assertTrue(vm.hasValidMove())
+    }
+
+    @Test
+    fun hasValidMove_falseWhenNoMoveExists() {
+        val grid = listOf(
+            listOf(1, 2, 3, 4, 5, 6, 1),
+            listOf(2, 3, 4, 5, 6, 1, 2),
+            listOf(3, 4, 5, 6, 1, 2, 3),
+            listOf(4, 5, 6, 1, 2, 3, 4),
+            listOf(5, 6, 1, 2, 3, 4, 5),
+            listOf(6, 1, 2, 3, 4, 5, 6),
+            listOf(1, 2, 3, 4, 5, 6, 1),
+        )
+        val vm = GameViewModel(initialGrid = grid)
+        assertFalse(vm.hasValidMove())
     }
 
     private val invalidSwapGrid = listOf(
