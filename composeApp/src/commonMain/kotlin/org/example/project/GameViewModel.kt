@@ -85,6 +85,20 @@ class GameViewModel(
         state = buildSnapshot()
     }
 
+    fun onDragSwap(from: GridPos, to: GridPos) {
+        if (isAnimating) return
+
+        val entityA = findEntityAt(from.row, from.col) ?: return
+        val entityB = findEntityAt(to.row, to.col) ?: return
+
+        if (!isAdjacentEntities(entityA, entityB)) return
+
+        findSelectedEntity()?.let { selectedMapper.remove(it) }
+
+        triggerSwap(entityA, entityB)
+        state = buildSnapshot()
+    }
+
     private fun triggerSwap(entityA: Int, entityB: Int) {
         isAnimating = true
         val posA = posMapper[entityA]!!
