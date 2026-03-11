@@ -125,17 +125,48 @@ class WorldTest {
         world.process()
         assertEquals(listOf(a, c), processed.sorted())
     }
+
+    @Test
+    fun systemsProcessInRegistrationOrder() {
+        val order = mutableListOf<String>()
+        val sysA = object : BaseSystem() {
+            override fun processSystem() { order.add("A") }
+        }
+        val sysB = object : BaseSystem() {
+            override fun processSystem() { order.add("B") }
+        }
+        val sysC = object : BaseSystem() {
+            override fun processSystem() { order.add("C") }
+        }
+        val world = World {
+            with(sysA)
+            with(sysB)
+            with(sysC)
+        }
+        world.process()
+        assertEquals(listOf("A", "B", "C"), order)
+    }
+
+    @Test
+    fun getAllEntityIds_returnsCorrectSet() {
+        val world = World()
+        val a = world.createEntity()
+        val b = world.createEntity()
+        assertEquals(setOf(a, b), world.getAllEntityIds())
+
+        world.deleteEntity(a)
+        assertEquals(setOf(b), world.getAllEntityIds())
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Match System Tests
+// Match Detection Tests
 // ---------------------------------------------------------------------------
 
-class MatchSystemTest {
+class MatchDetectionTest {
 
-    private fun worldWithGrid(types: List<List<Int>>): Pair<World, MatchSystem> {
-        val matchSystem = MatchSystem()
-        val world = World { with(matchSystem) }
+    private fun worldWithGrid(types: List<List<Int>>): World {
+        val world = World()
         val gridSize = types.size
         for (r in 0 until gridSize) {
             for (c in 0 until gridSize) {
@@ -144,7 +175,7 @@ class MatchSystemTest {
                 world.addComponent(e, JellyTypeComponent(types[r][c]))
             }
         }
-        return world to matchSystem
+        return world
     }
 
     @Test
@@ -156,8 +187,8 @@ class MatchSystemTest {
             listOf(4, 5, 6, 1, 2),
             listOf(5, 6, 1, 2, 3),
         )
-        val (_, matchSystem) = worldWithGrid(types)
-        val matches = matchSystem.findMatches(5)
+        val world = worldWithGrid(types)
+        val matches = findMatchesOnGrid(world, 5)
         assertEquals(3, matches.size)
     }
 
@@ -170,8 +201,8 @@ class MatchSystemTest {
             listOf(2, 5, 6, 1, 2),
             listOf(3, 6, 1, 2, 3),
         )
-        val (_, matchSystem) = worldWithGrid(types)
-        val matches = matchSystem.findMatches(5)
+        val world = worldWithGrid(types)
+        val matches = findMatchesOnGrid(world, 5)
         assertEquals(3, matches.size)
     }
 
@@ -182,8 +213,8 @@ class MatchSystemTest {
             listOf(2, 1, 3),
             listOf(3, 1, 2),
         )
-        val (_, matchSystem) = worldWithGrid(types)
-        val matches = matchSystem.findMatches(3)
+        val world = worldWithGrid(types)
+        val matches = findMatchesOnGrid(world, 3)
         assertEquals(5, matches.size)
     }
 
@@ -194,28 +225,30 @@ class MatchSystemTest {
             listOf(2, 1, 2),
             listOf(1, 2, 1),
         )
-        val (_, matchSystem) = worldWithGrid(types)
-        val matches = matchSystem.findMatches(3)
+        val world = worldWithGrid(types)
+        val matches = findMatchesOnGrid(world, 3)
         assertTrue(matches.isEmpty())
     }
 }
 
 // ---------------------------------------------------------------------------
-// Gravity System Tests
+// System Tests
 // ---------------------------------------------------------------------------
 
-class GravitySystemTest {
+class MatchGravitySystemTest {
 
     @Test
     fun removesMatchedEntitiesAndFillsGrid() {
-        val matchSystem = MatchSystem()
-        val gravitySystem = GravitySystem()
-        val world = World {
-            with(matchSystem)
-            with(gravitySystem)
-        }
+        val matchGravitySystem = MatchGravitySystem()
+        val world = World { with(matchGravitySystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.PROCESSING_MATCHES,
+            gridSize = 3,
+        ))
+
         val gridSize = 3
-        val entityIds = mutableListOf<Int>()
         val types = listOf(
             listOf(1, 2, 3),
             listOf(1, 3, 2),
@@ -226,18 +259,14 @@ class GravitySystemTest {
                 val e = world.createEntity()
                 world.addComponent(e, GridPositionComponent(r, c))
                 world.addComponent(e, JellyTypeComponent(types[r][c]))
-                entityIds.add(e)
             }
         }
 
-        val matches = matchSystem.findMatches(gridSize)
-        assertEquals(3, matches.size)
+        world.process()
 
-        val result = gravitySystem.applyGravity(matches, gridSize)
-        assertEquals(30, result.scoreGained)
-        assertTrue(result.hasFallingCells)
-
-        matches.forEach { assertFalse(world.entityExists(it)) }
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(30, board.score)
+        assertEquals(GamePhase.ANIMATING_FALL, board.phase)
 
         val posMapper = world.mapper<GridPositionComponent>()
         val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
@@ -253,11 +282,51 @@ class GravitySystemTest {
     }
 
     @Test
-    fun clearFallingComponents_removesAll() {
-        val gravitySystem = GravitySystem()
-        val world = World { with(gravitySystem) }
-        val fallingMapper = world.mapper<FallingComponent>()
+    fun skipsWhenPhaseIsNotProcessingMatches() {
+        val matchGravitySystem = MatchGravitySystem()
+        val world = World { with(matchGravitySystem) }
 
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.IDLE,
+            gridSize = 3,
+        ))
+
+        val types = listOf(
+            listOf(1, 1, 1),
+            listOf(2, 3, 4),
+            listOf(3, 4, 5),
+        )
+        for (r in 0 until 3) {
+            for (c in 0 until 3) {
+                val e = world.createEntity()
+                world.addComponent(e, GridPositionComponent(r, c))
+                world.addComponent(e, JellyTypeComponent(types[r][c]))
+            }
+        }
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(GamePhase.IDLE, board.phase)
+        assertEquals(0, board.score)
+    }
+}
+
+class FallResolveSystemTest {
+
+    @Test
+    fun clearsFallingComponentsAndTransitionsToIdle() {
+        val fallResolveSystem = FallResolveSystem()
+        val world = World { with(fallResolveSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.RESOLVE_FALL,
+            gridSize = 3,
+        ))
+
+        val fallingMapper = world.mapper<FallingComponent>()
         val e1 = world.createEntity()
         fallingMapper.set(e1, FallingComponent(-1, 0))
         val e2 = world.createEntity()
@@ -265,8 +334,90 @@ class GravitySystemTest {
 
         assertEquals(2, world.getEntitiesForAspect(Aspect.all(FallingComponent::class)).size)
 
-        gravitySystem.clearFallingComponents()
+        world.process()
+
         assertEquals(0, world.getEntitiesForAspect(Aspect.all(FallingComponent::class)).size)
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(GamePhase.IDLE, board.phase)
+    }
+
+    @Test
+    fun detectsCascadingMatches() {
+        val fallResolveSystem = FallResolveSystem()
+        val world = World { with(fallResolveSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.RESOLVE_FALL,
+            gridSize = 3,
+        ))
+
+        val fallingMapper = world.mapper<FallingComponent>()
+        val types = listOf(
+            listOf(1, 2, 3),
+            listOf(1, 3, 2),
+            listOf(1, 2, 3),
+        )
+        for (r in 0 until 3) {
+            for (c in 0 until 3) {
+                val e = world.createEntity()
+                world.addComponent(e, GridPositionComponent(r, c))
+                world.addComponent(e, JellyTypeComponent(types[r][c]))
+                if (c == 0) fallingMapper.set(e, FallingComponent(fromRow = r - 1, toRow = r))
+            }
+        }
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(GamePhase.PROCESSING_MATCHES, board.phase)
+    }
+}
+
+class SwapResolveSystemTest {
+
+    @Test
+    fun resolveReturnSwap_goesToIdle() {
+        val swapResolveSystem = SwapResolveSystem()
+        val world = World { with(swapResolveSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.RESOLVE_SWAP,
+            gridSize = 3,
+        ))
+
+        val posMapper = world.mapper<GridPositionComponent>()
+        val swappingMapper = world.mapper<SwappingComponent>()
+
+        val eA = world.createEntity()
+        world.addComponent(eA, GridPositionComponent(0, 0))
+        world.addComponent(eA, JellyTypeComponent(1))
+        swappingMapper.set(eA, SwappingComponent(
+            sourceRow = 0, sourceCol = 1,
+            targetRow = 0, targetCol = 0,
+            isReturning = true,
+        ))
+
+        val eB = world.createEntity()
+        world.addComponent(eB, GridPositionComponent(0, 1))
+        world.addComponent(eB, JellyTypeComponent(2))
+        swappingMapper.set(eB, SwappingComponent(
+            sourceRow = 0, sourceCol = 0,
+            targetRow = 0, targetCol = 1,
+            isReturning = true,
+        ))
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(GamePhase.IDLE, board.phase)
+        assertFalse(swappingMapper.has(eA))
+        assertFalse(swappingMapper.has(eB))
+        assertEquals(0, posMapper[eA]!!.row)
+        assertEquals(0, posMapper[eA]!!.col)
+        assertEquals(0, posMapper[eB]!!.row)
+        assertEquals(1, posMapper[eB]!!.col)
     }
 }
 
@@ -309,7 +460,7 @@ class GameViewModelTest {
     fun hasValidMove_trueWhenMoveExists() {
         val grid = listOf(
             listOf(1, 2, 1, 2, 1, 2, 1),
-            listOf(2, 1, 1, 1, 2, 1, 2),  // swapping (1,1) right gives 1,1,1 at cols 1-3
+            listOf(2, 1, 1, 1, 2, 1, 2),
             listOf(1, 2, 1, 2, 1, 2, 1),
             listOf(2, 1, 2, 1, 2, 1, 2),
             listOf(1, 2, 1, 2, 1, 2, 1),
@@ -371,6 +522,20 @@ class GameViewModelTest {
         assertTrue(viewModel.state.swappingCells.isEmpty())
         assertEquals(1, viewModel.state.grid[0][0].type)
         assertEquals(2, viewModel.state.grid[0][1].type)
+        assertEquals(0, viewModel.state.score)
+    }
+
+    @Test
+    fun selectionToggle_doesNotAnimateOrScore() {
+        val viewModel = GameViewModel(initialGrid = invalidSwapGrid)
+
+        viewModel.onCellClick(GridPos(0, 0))
+        assertFalse(viewModel.isAnimating)
+        assertEquals(GridPos(0, 0), viewModel.state.selected)
+
+        viewModel.onCellClick(GridPos(0, 0))
+        assertFalse(viewModel.isAnimating)
+        assertNull(viewModel.state.selected)
         assertEquals(0, viewModel.state.score)
     }
 }
