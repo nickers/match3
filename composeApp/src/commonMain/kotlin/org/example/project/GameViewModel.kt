@@ -47,16 +47,83 @@ class GameViewModel(
             "Initial grid must be $GRID_SIZE x $GRID_SIZE"
         }
 
+        do {
+            clearGrid()
+            for (row in 0 until GRID_SIZE) {
+                for (col in 0 until GRID_SIZE) {
+                    val entity = world.createEntity()
+                    world.addComponent(entity, GridPositionComponent(row, col))
+                    val type = seededGrid?.get(row)?.also {
+                        require(it.size == GRID_SIZE) { "Initial grid must be $GRID_SIZE x $GRID_SIZE" }
+                    }?.get(col) ?: Random.nextInt(1, 7)
+                    world.addComponent(entity, JellyTypeComponent(type))
+                }
+            }
+            if (seededGrid != null) return
+            eliminateInitialMatches()
+        } while (!hasValidMove())
+    }
+
+    private fun clearGrid() {
+        val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
+        world.getEntitiesForAspect(aspect).forEach { world.deleteEntity(it) }
+    }
+
+    private fun eliminateInitialMatches() {
+        var matches = matchSystem.findMatches(GRID_SIZE)
+        while (matches.isNotEmpty()) {
+            val entityId = matches.random()
+            val pos = posMapper[entityId]!!
+            val neighborTypes = neighborTypes(pos.row, pos.col)
+            val candidates = (1..6).filter { it !in neighborTypes }
+            val newType = candidates.random()
+            typeMapper.set(entityId, JellyTypeComponent(newType))
+            matches = matchSystem.findMatches(GRID_SIZE)
+        }
+    }
+
+    /**
+     * Returns `true` when at least one swap of adjacent gems produces a match.
+     * Only right and down swaps are tested — every pair is covered exactly once.
+     */
+    fun hasValidMove(): Boolean {
         for (row in 0 until GRID_SIZE) {
             for (col in 0 until GRID_SIZE) {
-                val entity = world.createEntity()
-                world.addComponent(entity, GridPositionComponent(row, col))
-                val type = seededGrid?.get(row)?.also {
-                    require(it.size == GRID_SIZE) { "Initial grid must be $GRID_SIZE x $GRID_SIZE" }
-                }?.get(col) ?: Random.nextInt(1, 7)
-                world.addComponent(entity, JellyTypeComponent(type))
+                val eA = findEntityAt(row, col) ?: continue
+                if (col + 1 < GRID_SIZE) {
+                    val eB = findEntityAt(row, col + 1) ?: continue
+                    if (swapProducesMatch(eA, eB)) return true
+                }
+                if (row + 1 < GRID_SIZE) {
+                    val eB = findEntityAt(row + 1, col) ?: continue
+                    if (swapProducesMatch(eA, eB)) return true
+                }
             }
         }
+        return false
+    }
+
+    private fun swapProducesMatch(eA: Int, eB: Int): Boolean {
+        val typeA = typeMapper[eA]!!
+        val typeB = typeMapper[eB]!!
+        typeMapper.set(eA, typeB)
+        typeMapper.set(eB, typeA)
+        val found = matchSystem.findMatches(GRID_SIZE).isNotEmpty()
+        typeMapper.set(eA, typeA)
+        typeMapper.set(eB, typeB)
+        return found
+    }
+
+    private fun neighborTypes(row: Int, col: Int): Set<Int> {
+        val types = mutableSetOf<Int>()
+        for ((dr, dc) in listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)) {
+            val nr = row + dr
+            val nc = col + dc
+            if (nr in 0 until GRID_SIZE && nc in 0 until GRID_SIZE) {
+                findEntityAt(nr, nc)?.let { types.add(typeMapper[it]!!.type) }
+            }
+        }
+        return types
     }
 
     fun onCellClick(pos: GridPos) {

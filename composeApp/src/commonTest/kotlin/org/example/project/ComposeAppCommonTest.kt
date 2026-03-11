@@ -276,6 +276,65 @@ class GravitySystemTest {
 
 class GameViewModelTest {
 
+    @Test
+    fun initialBoard_hasNoMatchesAndHasValidMove() {
+        repeat(50) {
+            val vm = GameViewModel()
+            val grid = vm.state.grid
+            for (r in grid.indices) {
+                var c = 0
+                while (c < grid[r].size) {
+                    val t = grid[r][c].type
+                    var len = 1
+                    while (c + len < grid[r].size && grid[r][c + len].type == t) len++
+                    assertTrue(len < 3, "Horizontal match at row=$r col=$c len=$len type=$t")
+                    c += len
+                }
+            }
+            for (c in grid[0].indices) {
+                var r = 0
+                while (r < grid.size) {
+                    val t = grid[r][c].type
+                    var len = 1
+                    while (r + len < grid.size && grid[r + len][c].type == t) len++
+                    assertTrue(len < 3, "Vertical match at row=$r col=$c len=$len type=$t")
+                    r += len
+                }
+            }
+            assertTrue(vm.hasValidMove(), "Board should have at least one valid move")
+        }
+    }
+
+    @Test
+    fun hasValidMove_trueWhenMoveExists() {
+        val grid = listOf(
+            listOf(1, 2, 1, 2, 1, 2, 1),
+            listOf(2, 1, 1, 1, 2, 1, 2),  // swapping (1,1) right gives 1,1,1 at cols 1-3
+            listOf(1, 2, 1, 2, 1, 2, 1),
+            listOf(2, 1, 2, 1, 2, 1, 2),
+            listOf(1, 2, 1, 2, 1, 2, 1),
+            listOf(2, 1, 2, 1, 2, 1, 2),
+            listOf(1, 2, 1, 2, 1, 2, 1),
+        )
+        val vm = GameViewModel(initialGrid = grid)
+        assertTrue(vm.hasValidMove())
+    }
+
+    @Test
+    fun hasValidMove_falseWhenNoMoveExists() {
+        val grid = listOf(
+            listOf(1, 2, 3, 4, 5, 6, 1),
+            listOf(2, 3, 4, 5, 6, 1, 2),
+            listOf(3, 4, 5, 6, 1, 2, 3),
+            listOf(4, 5, 6, 1, 2, 3, 4),
+            listOf(5, 6, 1, 2, 3, 4, 5),
+            listOf(6, 1, 2, 3, 4, 5, 6),
+            listOf(1, 2, 3, 4, 5, 6, 1),
+        )
+        val vm = GameViewModel(initialGrid = grid)
+        assertFalse(vm.hasValidMove())
+    }
+
     private val invalidSwapGrid = listOf(
         listOf(1, 2, 3, 4, 5, 6, 1),
         listOf(2, 3, 4, 5, 6, 1, 2),
