@@ -4,13 +4,11 @@ import kotlin.reflect.KClass
 
 /**
  * Marker interface for all ECS components.
- * Modeled after artemis-odb's [com.artemis.Component].
  */
 interface Component
 
 /**
  * Defines a set of component types an entity must possess to be matched.
- * Modeled after artemis-odb's [com.artemis.Aspect].
  */
 class Aspect private constructor(
     val allTypes: Set<KClass<out Component>>,
@@ -22,7 +20,6 @@ class Aspect private constructor(
 
 /**
  * Provides fast, type-safe access to components of a given type.
- * Modeled after artemis-odb's [com.artemis.ComponentMapper].
  */
 class ComponentMapper<T : Component> internal constructor(
     private val type: KClass<T>,
@@ -36,7 +33,8 @@ class ComponentMapper<T : Component> internal constructor(
 
 /**
  * Base class for systems that operate on the [World].
- * Modeled after artemis-odb's [com.artemis.BaseSystem].
+ * Each system's [processSystem] is called once per frame via [World.process],
+ * in the order systems were registered.
  */
 abstract class BaseSystem {
     lateinit var world: World
@@ -49,7 +47,6 @@ abstract class BaseSystem {
 
 /**
  * System that automatically iterates over all entities matching an [Aspect].
- * Modeled after artemis-odb's [com.artemis.systems.IteratingSystem].
  */
 abstract class IteratingSystem(val aspect: Aspect) : BaseSystem() {
     override fun processSystem() {
@@ -61,7 +58,7 @@ abstract class IteratingSystem(val aspect: Aspect) : BaseSystem() {
 
 /**
  * Builder for [World] configuration. Register systems before the world is created.
- * Modeled after artemis-odb's [com.artemis.WorldConfiguration].
+ * Systems are processed in the order they are added.
  */
 class WorldConfiguration {
     internal val systems = mutableListOf<BaseSystem>()
@@ -74,10 +71,10 @@ class WorldConfiguration {
 
 /**
  * Main container for entities, components, and systems.
- * Modeled after artemis-odb's [com.artemis.World].
  *
  * Entities are lightweight integer IDs. Components are stored in per-type maps.
- * Systems are registered at construction time and invoked via [process].
+ * Systems are registered at construction time and invoked via [process] in
+ * registration order.
  */
 class World(configure: WorldConfiguration.() -> Unit = {}) {
     private var nextEntityId = 0
@@ -144,6 +141,10 @@ class World(configure: WorldConfiguration.() -> Unit = {}) {
 
     inline fun <reified T : BaseSystem> getSystem(): T = getSystem(T::class)
 
+    /**
+     * Runs all enabled systems in registration order. This constitutes one
+     * processing frame.
+     */
     fun process() {
         systems.filter { it.isEnabled }.forEach { it.processSystem() }
     }

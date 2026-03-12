@@ -6,7 +6,6 @@ package org.example.project.ecs
  */
 data class GridPositionComponent(var row: Int, var col: Int) : Component {
 
-    /** Copies row and col from [other] into this component. */
     fun setTo(other: GridPositionComponent) {
         row = other.row
         col = other.col
@@ -35,10 +34,7 @@ data class SwappingComponent(
     val isReturning: Boolean = false,
 ) : Component {
 
-    /** Target grid position for the swap (for use with [GridPositionComponent.setTo]). */
     val targetPosition get() = GridPositionComponent(targetRow, targetCol)
-
-    /** Source grid position before the swap (for reverting). */
     val sourcePosition get() = GridPositionComponent(sourceRow, sourceCol)
 }
 
@@ -49,4 +45,39 @@ data class SwappingComponent(
 data class FallingComponent(
     val fromRow: Int,
     val toRow: Int,
+) : Component
+
+// ---------------------------------------------------------------------------
+// Game-level state
+// ---------------------------------------------------------------------------
+
+/**
+ * Tracks the current phase of the game loop. Systems gate their processing
+ * on the active phase to ensure correct ordering of game events.
+ */
+enum class GamePhase {
+    /** Waiting for player input. */
+    IDLE,
+    /** Swap animation is playing (forward or return). */
+    ANIMATING_SWAP,
+    /** Swap animation finished; resolve the outcome. */
+    RESOLVE_SWAP,
+    /** Match detection + gravity cascade in progress. */
+    PROCESSING_MATCHES,
+    /** Fall animation is playing. */
+    ANIMATING_FALL,
+    /** Fall animation finished; check for cascading matches. */
+    RESOLVE_FALL;
+
+    val isAnimating: Boolean get() = this == ANIMATING_SWAP || this == ANIMATING_FALL
+}
+
+/**
+ * Singleton component on the "board" entity. Holds game-level state that
+ * systems need to coordinate: current phase, score, and grid dimensions.
+ */
+data class BoardStateComponent(
+    var phase: GamePhase = GamePhase.IDLE,
+    var score: Int = 0,
+    val gridSize: Int = 7,
 ) : Component
