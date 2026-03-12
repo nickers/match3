@@ -7,7 +7,7 @@ import org.example.project.ecs.*
 import kotlin.random.Random
 
 const val GRID_SIZE = 7
-const val SWAP_DURATION_MS = 900
+const val SWAP_DURATION_MS = 300
 
 class GameViewModel(
     private val initialGrid: List<List<Int>>? = null,
