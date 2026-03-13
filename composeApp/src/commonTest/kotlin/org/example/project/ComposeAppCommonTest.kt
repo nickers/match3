@@ -422,6 +422,185 @@ class SwapResolveSystemTest {
 }
 
 // ---------------------------------------------------------------------------
+// Bomb Mechanic Tests
+// ---------------------------------------------------------------------------
+
+class BombExplodeSystemTest {
+
+    @Test
+    fun bombExplosion_removes3x3Area_andAddsScore() {
+        val bombExplodeSystem = BombExplodeSystem()
+        val world = World { with(bombExplodeSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.RESOLVE_EXPLOSION,
+            gridSize = 5,
+        ))
+
+        val gridSize = 5
+        val entities = Array(gridSize) { IntArray(gridSize) }
+        for (r in 0 until gridSize) {
+            for (c in 0 until gridSize) {
+                val e = world.createEntity()
+                world.addComponent(e, GridPositionComponent(r, c))
+                world.addComponent(e, JellyTypeComponent(if (r == 2 && c == 2) 0 else (r * gridSize + c) % 6 + 1))
+                if (r == 2 && c == 2) {
+                    world.addComponent(e, BombComponent())
+                    world.addComponent(e, ExplodingComponent())
+                }
+                entities[r][c] = e
+            }
+        }
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(90, board.score) // 3x3 = 9 cells removed * 10 points
+        assertEquals(GamePhase.ANIMATING_FALL, board.phase)
+
+        val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
+        assertEquals(gridSize * gridSize, world.getEntitiesForAspect(aspect).size)
+    }
+
+    @Test
+    fun bombAtCorner_removesOnlyOnBoardCells() {
+        val bombExplodeSystem = BombExplodeSystem()
+        val world = World { with(bombExplodeSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.RESOLVE_EXPLOSION,
+            gridSize = 3,
+        ))
+
+        val gridSize = 3
+        for (r in 0 until gridSize) {
+            for (c in 0 until gridSize) {
+                val e = world.createEntity()
+                world.addComponent(e, GridPositionComponent(r, c))
+                world.addComponent(e, JellyTypeComponent(if (r == 0 && c == 0) 0 else (r * gridSize + c) % 6 + 1))
+                if (r == 0 && c == 0) {
+                    world.addComponent(e, BombComponent())
+                    world.addComponent(e, ExplodingComponent())
+                }
+            }
+        }
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        // Corner bomb at (0,0): only cells (0,0), (0,1), (1,0), (1,1) are on grid = 4 cells
+        assertEquals(40, board.score)
+    }
+
+    @Test
+    fun skipsWhenPhaseIsNotResolveExplosion() {
+        val bombExplodeSystem = BombExplodeSystem()
+        val world = World { with(bombExplodeSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.IDLE,
+            gridSize = 3,
+        ))
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(GamePhase.IDLE, board.phase)
+        assertEquals(0, board.score)
+    }
+}
+
+class SwapResolveWithBombTest {
+
+    @Test
+    fun swapWithBomb_transitionsToAnimatingExplosion() {
+        val swapResolveSystem = SwapResolveSystem()
+        val world = World { with(swapResolveSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.RESOLVE_SWAP,
+            gridSize = 3,
+        ))
+
+        val swappingMapper = world.mapper<SwappingComponent>()
+        val explodingMapper = world.mapper<ExplodingComponent>()
+
+        val eBomb = world.createEntity()
+        world.addComponent(eBomb, GridPositionComponent(0, 0))
+        world.addComponent(eBomb, JellyTypeComponent(0))
+        world.addComponent(eBomb, BombComponent())
+        swappingMapper.set(eBomb, SwappingComponent(
+            sourceRow = 0, sourceCol = 1,
+            targetRow = 0, targetCol = 0,
+        ))
+
+        val eGem = world.createEntity()
+        world.addComponent(eGem, GridPositionComponent(0, 1))
+        world.addComponent(eGem, JellyTypeComponent(1))
+        swappingMapper.set(eGem, SwappingComponent(
+            sourceRow = 0, sourceCol = 0,
+            targetRow = 0, targetCol = 1,
+        ))
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(GamePhase.ANIMATING_EXPLOSION, board.phase)
+        assertTrue(explodingMapper.has(eBomb))
+        assertFalse(explodingMapper.has(eGem))
+        assertFalse(swappingMapper.has(eBomb))
+        assertFalse(swappingMapper.has(eGem))
+    }
+}
+
+class FindMatchesWithBombsTest {
+
+    @Test
+    fun bombsDoNotFormMatches() {
+        val world = World()
+        val gridSize = 3
+        for (r in 0 until gridSize) {
+            for (c in 0 until gridSize) {
+                val e = world.createEntity()
+                world.addComponent(e, GridPositionComponent(r, c))
+                if (c == 0) {
+                    world.addComponent(e, JellyTypeComponent(0))
+                    world.addComponent(e, BombComponent())
+                } else {
+                    world.addComponent(e, JellyTypeComponent((r + c) % 6 + 1))
+                }
+            }
+        }
+
+        val matches = findMatchesOnGrid(world, gridSize)
+        assertTrue(matches.isEmpty())
+    }
+
+    @Test
+    fun bombsBreakGemRuns() {
+        val world = World()
+        // Row: 1, bomb, 1 — should NOT be a match of 3
+        val e1 = world.createEntity()
+        world.addComponent(e1, GridPositionComponent(0, 0))
+        world.addComponent(e1, JellyTypeComponent(1))
+        val e2 = world.createEntity()
+        world.addComponent(e2, GridPositionComponent(0, 1))
+        world.addComponent(e2, JellyTypeComponent(0))
+        world.addComponent(e2, BombComponent())
+        val e3 = world.createEntity()
+        world.addComponent(e3, GridPositionComponent(0, 2))
+        world.addComponent(e3, JellyTypeComponent(1))
+
+        val matches = findMatchesOnGrid(world, 3)
+        assertTrue(matches.isEmpty())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Game ViewModel Tests
 // ---------------------------------------------------------------------------
 
@@ -435,9 +614,10 @@ class GameViewModelTest {
             for (r in grid.indices) {
                 var c = 0
                 while (c < grid[r].size) {
+                    if (grid[r][c].isBomb) { c++; continue }
                     val t = grid[r][c].type
                     var len = 1
-                    while (c + len < grid[r].size && grid[r][c + len].type == t) len++
+                    while (c + len < grid[r].size && !grid[r][c + len].isBomb && grid[r][c + len].type == t) len++
                     assertTrue(len < 3, "Horizontal match at row=$r col=$c len=$len type=$t")
                     c += len
                 }
@@ -445,9 +625,10 @@ class GameViewModelTest {
             for (c in grid[0].indices) {
                 var r = 0
                 while (r < grid.size) {
+                    if (grid[r][c].isBomb) { r++; continue }
                     val t = grid[r][c].type
                     var len = 1
-                    while (r + len < grid.size && grid[r + len][c].type == t) len++
+                    while (r + len < grid.size && !grid[r + len][c].isBomb && grid[r + len][c].type == t) len++
                     assertTrue(len < 3, "Vertical match at row=$r col=$c len=$len type=$t")
                     r += len
                 }
