@@ -47,6 +47,19 @@ data class FallingComponent(
     val toRow: Int,
 ) : Component
 
+/**
+ * Marker: the entity is a bomb rather than a regular gem.
+ * Bombs do not participate in match detection. Swapping a bomb with any gem
+ * causes an explosion that removes all cells in the 3×3 area centred on the bomb.
+ */
+class BombComponent : Component
+
+/**
+ * Marker: attached to a bomb entity that is currently exploding.
+ * The bomb's [GridPositionComponent] supplies the explosion centre.
+ */
+class ExplodingComponent : Component
+
 // ---------------------------------------------------------------------------
 // Game-level state
 // ---------------------------------------------------------------------------
@@ -62,6 +75,10 @@ enum class GamePhase {
     ANIMATING_SWAP,
     /** Swap animation finished; resolve the outcome. */
     RESOLVE_SWAP,
+    /** Bomb explosion animation is playing (growing square). */
+    ANIMATING_EXPLOSION,
+    /** Explosion animation finished; remove cells and apply gravity. */
+    RESOLVE_EXPLOSION,
     /** Match detection + gravity cascade in progress. */
     PROCESSING_MATCHES,
     /** Fall animation is playing. */
@@ -69,7 +86,8 @@ enum class GamePhase {
     /** Fall animation finished; check for cascading matches. */
     RESOLVE_FALL;
 
-    val isAnimating: Boolean get() = this == ANIMATING_SWAP || this == ANIMATING_FALL
+    val isAnimating: Boolean get() =
+        this == ANIMATING_SWAP || this == ANIMATING_FALL || this == ANIMATING_EXPLOSION
 }
 
 /**
