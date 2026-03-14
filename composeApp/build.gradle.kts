@@ -68,7 +68,7 @@ kotlin {
 }
 
 android {
-    namespace = "org.example.project"
+    namespace = "pl.nickers.match3"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
@@ -82,11 +82,11 @@ android {
 
 compose.desktop {
     application {
-        mainClass = "org.example.project.MainKt"
+        mainClass = "pl.nickers.match3.MainKt"
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "org.example.project"
+            packageName = "pl.nickers.match3"
             packageVersion = "1.0.0"
         }
     }
