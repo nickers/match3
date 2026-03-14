@@ -330,29 +330,28 @@ class GameLoopSystemTest {
     }
 
     @Test
-    fun createsReturnSwapWhenNoMatchesAndSwapAwaiting() {
+    fun createsReturnSwapWhenPendingValidationAndNoMatches() {
         val gameLoopSystem = GameLoopSystem()
         val world = World { with(gameLoopSystem) }
 
         val boardEntity = world.createEntity()
-        val board = BoardStateComponent(
+        world.addComponent(boardEntity, BoardStateComponent(
             phase = GamePhase.PROCESSING,
             gridSize = 3,
-            awaitingSwapResult = true,
-        )
-        world.addComponent(boardEntity, board)
+        ))
 
         val eA = world.createEntity()
         world.addComponent(eA, GridPositionComponent(0, 0))
         world.addComponent(eA, JellyTypeComponent(1))
+        world.addComponent(eA, PendingSwapValidationComponent(otherEntity = -1))
+
         val eB = world.createEntity()
         world.addComponent(eB, GridPositionComponent(0, 1))
         world.addComponent(eB, JellyTypeComponent(2))
 
-        board.lastSwapEntityA = eA
-        board.lastSwapEntityB = eB
+        // Patch the component with correct eB id
+        world.addComponent(eA, PendingSwapValidationComponent(otherEntity = eB))
 
-        // Fill remaining grid so no matches
         for (r in 0 until 3) {
             for (c in 0 until 3) {
                 if (r == 0 && c <= 1) continue
@@ -364,12 +363,53 @@ class GameLoopSystemTest {
 
         world.process()
 
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
         assertEquals(GamePhase.ANIMATING_SWAP, board.phase)
         val swappingMapper = world.mapper<SwappingComponent>()
         assertTrue(swappingMapper.has(eA))
         assertTrue(swappingMapper.has(eB))
         assertTrue(swappingMapper[eA]!!.isReturning)
         assertTrue(swappingMapper[eB]!!.isReturning)
+        val pendingMapper = world.mapper<PendingSwapValidationComponent>()
+        assertFalse(pendingMapper.has(eA))
+    }
+
+    @Test
+    fun clearsPendingValidationWhenMatchesFound() {
+        val gameLoopSystem = GameLoopSystem()
+        val world = World { with(gameLoopSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.PROCESSING,
+            gridSize = 3,
+        ))
+
+        val types = listOf(
+            listOf(1, 2, 3),
+            listOf(1, 3, 2),
+            listOf(1, 2, 3),
+        )
+        var entityAtOrigin = -1
+        for (r in 0 until 3) {
+            for (c in 0 until 3) {
+                val e = world.createEntity()
+                world.addComponent(e, GridPositionComponent(r, c))
+                world.addComponent(e, JellyTypeComponent(types[r][c]))
+                if (r == 0 && c == 0) entityAtOrigin = e
+            }
+        }
+
+        world.addComponent(entityAtOrigin, PendingSwapValidationComponent(otherEntity = entityAtOrigin + 1))
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(30, board.score)
+        val pendingMapper = world.mapper<PendingSwapValidationComponent>()
+        assertTrue(
+            world.getEntitiesForAspect(Aspect.all(PendingSwapValidationComponent::class)).isEmpty()
+        )
     }
 }
 
@@ -446,11 +486,12 @@ class SwapResolveSystemTest {
         assertEquals(0, posMapper[eA]!!.col)
         assertEquals(0, posMapper[eB]!!.row)
         assertEquals(1, posMapper[eB]!!.col)
-        assertFalse(board.awaitingSwapResult)
+        val pendingMapper = world.mapper<PendingSwapValidationComponent>()
+        assertFalse(pendingMapper.has(eA))
     }
 
     @Test
-    fun resolveForwardSwap_setsAwaitingAndGoesToProcessing() {
+    fun resolveForwardSwap_addsPendingValidationComponent() {
         val swapResolveSystem = SwapResolveSystem()
         val world = World { with(swapResolveSystem) }
 
@@ -482,9 +523,10 @@ class SwapResolveSystemTest {
 
         val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
         assertEquals(GamePhase.PROCESSING, board.phase)
-        assertTrue(board.awaitingSwapResult)
-        assertEquals(eA, board.lastSwapEntityA)
-        assertEquals(eB, board.lastSwapEntityB)
+
+        val pendingMapper = world.mapper<PendingSwapValidationComponent>()
+        assertTrue(pendingMapper.has(eA))
+        assertEquals(eB, pendingMapper[eA]!!.otherEntity)
     }
 }
 
@@ -587,18 +629,17 @@ class FullBoardExplosionTest {
 
         val gridSize = 3
         val boardEntity = world.createEntity()
-        val board = BoardStateComponent(
+        world.addComponent(boardEntity, BoardStateComponent(
             phase = GamePhase.RESOLVE_EFFECTS,
             gridSize = gridSize,
-            fullBoardExplosion = true,
-        )
-        world.addComponent(boardEntity, board)
+        ))
 
         val bombA = world.createEntity()
         world.addComponent(bombA, GridPositionComponent(1, 1))
         world.addComponent(bombA, JellyTypeComponent(0))
         world.addComponent(bombA, BombComponent())
         world.addComponent(bombA, ExplodingComponent())
+        world.addComponent(bombA, FullBoardExplosionComponent())
 
         val bombB = world.createEntity()
         world.addComponent(bombB, GridPositionComponent(1, 2))
@@ -617,17 +658,16 @@ class FullBoardExplosionTest {
 
         world.process()
 
-        // All 9 cells removed = 90 points, grid fully replaced
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
         assertEquals(90, board.score)
         assertEquals(GamePhase.PROCESSING, board.phase)
-        assertFalse(board.fullBoardExplosion)
 
         val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
         assertEquals(gridSize * gridSize, world.getEntitiesForAspect(aspect).size)
     }
 
     @Test
-    fun swapResolve_setsFlagWhenBothAreBombs() {
+    fun swapResolve_addsFullBoardComponentWhenBothAreBombs() {
         val swapResolveSystem = SwapResolveSystem()
         val world = World { with(swapResolveSystem) }
 
@@ -638,7 +678,6 @@ class FullBoardExplosionTest {
         ))
 
         val swappingMapper = world.mapper<SwappingComponent>()
-        val explodingMapper = world.mapper<ExplodingComponent>()
 
         val eBombA = world.createEntity()
         world.addComponent(eBombA, GridPositionComponent(0, 0))
@@ -662,13 +701,16 @@ class FullBoardExplosionTest {
 
         val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
         assertEquals(GamePhase.PROCESSING, board.phase)
-        assertTrue(board.fullBoardExplosion)
+
+        val explodingMapper = world.mapper<ExplodingComponent>()
+        val fullBoardMapper = world.mapper<FullBoardExplosionComponent>()
         assertTrue(explodingMapper.has(eBombA))
         assertTrue(explodingMapper.has(eBombB))
+        assertTrue(fullBoardMapper.has(eBombA))
     }
 
     @Test
-    fun swapResolve_doesNotSetFlagWhenOnlyOneBomb() {
+    fun swapResolve_doesNotAddFullBoardWhenOnlyOneBomb() {
         val swapResolveSystem = SwapResolveSystem()
         val world = World { with(swapResolveSystem) }
 
@@ -699,8 +741,8 @@ class FullBoardExplosionTest {
 
         world.process()
 
-        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
-        assertFalse(board.fullBoardExplosion)
+        val fullBoardMapper = world.mapper<FullBoardExplosionComponent>()
+        assertFalse(fullBoardMapper.has(eBomb))
     }
 }
 
@@ -745,7 +787,8 @@ class SwapResolveWithBombTest {
         assertFalse(explodingMapper.has(eGem))
         assertFalse(swappingMapper.has(eBomb))
         assertFalse(swappingMapper.has(eGem))
-        assertFalse(board.awaitingSwapResult)
+        val pendingMapper = world.mapper<PendingSwapValidationComponent>()
+        assertFalse(pendingMapper.has(eBomb))
     }
 }
 

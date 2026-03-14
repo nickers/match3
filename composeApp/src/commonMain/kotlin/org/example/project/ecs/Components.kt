@@ -60,6 +60,22 @@ class BombComponent : Component
  */
 class ExplodingComponent : Component
 
+/**
+ * Marker: attached to an exploding bomb entity to indicate that the
+ * explosion should cover the entire board (e.g. two bombs swapped).
+ */
+class FullBoardExplosionComponent : Component
+
+/**
+ * Attached to one of the two entities involved in a forward swap that
+ * has not yet been validated. [otherEntity] is the id of the second
+ * entity. If the processing loop finds no matches / effects, it uses
+ * this component to create a return-swap animation.
+ */
+data class PendingSwapValidationComponent(
+    val otherEntity: Int,
+) : Component
+
 // ---------------------------------------------------------------------------
 // Game-level state
 // ---------------------------------------------------------------------------
@@ -98,15 +114,10 @@ enum class GamePhase {
 
 /**
  * Singleton component on the "board" entity. Holds game-level state that
- * systems need to coordinate: current phase, score, grid dimensions,
- * and swap-return tracking.
+ * systems need to coordinate: current phase, score, and grid dimensions.
  */
 data class BoardStateComponent(
     var phase: GamePhase = GamePhase.IDLE,
     var score: Int = 0,
     val gridSize: Int = 7,
-    var awaitingSwapResult: Boolean = false,
-    var lastSwapEntityA: Int = -1,
-    var lastSwapEntityB: Int = -1,
-    var fullBoardExplosion: Boolean = false,
 ) : Component

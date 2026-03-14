@@ -213,11 +213,5 @@ class GameViewModel(
         return types
     }
 
-    private fun findEntityAt(row: Int, col: Int): Int? {
-        val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
-        return world.getEntitiesForAspect(aspect).firstOrNull {
-            val pos = posMapper[it]!!
-            pos.row == row && pos.col == col
-        }
-    }
+    private fun findEntityAt(row: Int, col: Int): Int? = world.findEntityAt(row, col)
 }
