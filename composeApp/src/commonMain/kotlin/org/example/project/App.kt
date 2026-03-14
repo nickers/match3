@@ -94,7 +94,7 @@ fun App() {
                 onDragSwap = vm::onDragSwap,
                 onSwapFinished = vm::onSwapAnimationFinished,
                 onFallFinished = vm::onFallAnimationFinished,
-                onExplosionFinished = vm::onExplosionAnimationFinished,
+                onEffectsFinished = vm::onEffectsAnimationFinished,
             )
 
             ScoreDisplay(
@@ -113,7 +113,7 @@ private fun GameGrid(
     onDragSwap: (from: GridPos, to: GridPos) -> Unit,
     onSwapFinished: () -> Unit,
     onFallFinished: () -> Unit,
-    onExplosionFinished: () -> Unit,
+    onEffectsFinished: () -> Unit,
 ) {
     val grid = state.grid
     val swappingCells = state.swappingCells
@@ -296,9 +296,9 @@ private fun GameGrid(
                     explosionProgress.snapTo(0f)
                     explosionProgress.animateTo(
                         1f,
-                        tween(durationMillis = EXPLOSION_DURATION_MS),
+                        tween(durationMillis = EFFECTS_DURATION_MS),
                     )
-                    onExplosionFinished()
+                    onEffectsFinished()
                 }
 
                 Canvas(modifier = Modifier.fillMaxSize()) {

@@ -235,27 +235,26 @@ class MatchDetectionTest {
 // System Tests
 // ---------------------------------------------------------------------------
 
-class MatchGravitySystemTest {
+class GameLoopSystemTest {
 
     @Test
-    fun removesMatchedEntitiesAndFillsGrid() {
-        val matchGravitySystem = MatchGravitySystem()
-        val world = World { with(matchGravitySystem) }
+    fun processesMatchesAndCreatesGravity() {
+        val gameLoopSystem = GameLoopSystem()
+        val world = World { with(gameLoopSystem) }
 
         val boardEntity = world.createEntity()
         world.addComponent(boardEntity, BoardStateComponent(
-            phase = GamePhase.PROCESSING_MATCHES,
+            phase = GamePhase.PROCESSING,
             gridSize = 3,
         ))
 
-        val gridSize = 3
         val types = listOf(
             listOf(1, 2, 3),
             listOf(1, 3, 2),
             listOf(1, 2, 3),
         )
-        for (r in 0 until gridSize) {
-            for (c in 0 until gridSize) {
+        for (r in 0 until 3) {
+            for (c in 0 until 3) {
                 val e = world.createEntity()
                 world.addComponent(e, GridPositionComponent(r, c))
                 world.addComponent(e, JellyTypeComponent(types[r][c]))
@@ -271,20 +270,20 @@ class MatchGravitySystemTest {
         val posMapper = world.mapper<GridPositionComponent>()
         val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
         val remaining = world.getEntitiesForAspect(aspect)
-        assertEquals(gridSize * gridSize, remaining.size)
+        assertEquals(9, remaining.size)
 
         val occupied = remaining.map { posMapper[it]!!.let { p -> p.row to p.col } }.toSet()
-        for (r in 0 until gridSize) {
-            for (c in 0 until gridSize) {
+        for (r in 0 until 3) {
+            for (c in 0 until 3) {
                 assertTrue((r to c) in occupied, "Expected entity at ($r, $c)")
             }
         }
     }
 
     @Test
-    fun skipsWhenPhaseIsNotProcessingMatches() {
-        val matchGravitySystem = MatchGravitySystem()
-        val world = World { with(matchGravitySystem) }
+    fun skipsWhenPhaseIsNotProcessing() {
+        val gameLoopSystem = GameLoopSystem()
+        val world = World { with(gameLoopSystem) }
 
         val boardEntity = world.createEntity()
         world.addComponent(boardEntity, BoardStateComponent(
@@ -292,10 +291,28 @@ class MatchGravitySystemTest {
             gridSize = 3,
         ))
 
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(GamePhase.IDLE, board.phase)
+        assertEquals(0, board.score)
+    }
+
+    @Test
+    fun transitionsToIdleWhenNothingToDo() {
+        val gameLoopSystem = GameLoopSystem()
+        val world = World { with(gameLoopSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.PROCESSING,
+            gridSize = 3,
+        ))
+
         val types = listOf(
-            listOf(1, 1, 1),
-            listOf(2, 3, 4),
-            listOf(3, 4, 5),
+            listOf(1, 2, 1),
+            listOf(2, 1, 2),
+            listOf(1, 2, 1),
         )
         for (r in 0 until 3) {
             for (c in 0 until 3) {
@@ -311,12 +328,55 @@ class MatchGravitySystemTest {
         assertEquals(GamePhase.IDLE, board.phase)
         assertEquals(0, board.score)
     }
+
+    @Test
+    fun createsReturnSwapWhenNoMatchesAndSwapAwaiting() {
+        val gameLoopSystem = GameLoopSystem()
+        val world = World { with(gameLoopSystem) }
+
+        val boardEntity = world.createEntity()
+        val board = BoardStateComponent(
+            phase = GamePhase.PROCESSING,
+            gridSize = 3,
+            awaitingSwapResult = true,
+        )
+        world.addComponent(boardEntity, board)
+
+        val eA = world.createEntity()
+        world.addComponent(eA, GridPositionComponent(0, 0))
+        world.addComponent(eA, JellyTypeComponent(1))
+        val eB = world.createEntity()
+        world.addComponent(eB, GridPositionComponent(0, 1))
+        world.addComponent(eB, JellyTypeComponent(2))
+
+        board.lastSwapEntityA = eA
+        board.lastSwapEntityB = eB
+
+        // Fill remaining grid so no matches
+        for (r in 0 until 3) {
+            for (c in 0 until 3) {
+                if (r == 0 && c <= 1) continue
+                val e = world.createEntity()
+                world.addComponent(e, GridPositionComponent(r, c))
+                world.addComponent(e, JellyTypeComponent((r * 3 + c) % 6 + 1))
+            }
+        }
+
+        world.process()
+
+        assertEquals(GamePhase.ANIMATING_SWAP, board.phase)
+        val swappingMapper = world.mapper<SwappingComponent>()
+        assertTrue(swappingMapper.has(eA))
+        assertTrue(swappingMapper.has(eB))
+        assertTrue(swappingMapper[eA]!!.isReturning)
+        assertTrue(swappingMapper[eB]!!.isReturning)
+    }
 }
 
 class FallResolveSystemTest {
 
     @Test
-    fun clearsFallingComponentsAndTransitionsToIdle() {
+    fun clearsFallingComponentsAndTransitionsToProcessing() {
         val fallResolveSystem = FallResolveSystem()
         val world = World { with(fallResolveSystem) }
 
@@ -338,46 +398,14 @@ class FallResolveSystemTest {
 
         assertEquals(0, world.getEntitiesForAspect(Aspect.all(FallingComponent::class)).size)
         val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
-        assertEquals(GamePhase.IDLE, board.phase)
-    }
-
-    @Test
-    fun detectsCascadingMatches() {
-        val fallResolveSystem = FallResolveSystem()
-        val world = World { with(fallResolveSystem) }
-
-        val boardEntity = world.createEntity()
-        world.addComponent(boardEntity, BoardStateComponent(
-            phase = GamePhase.RESOLVE_FALL,
-            gridSize = 3,
-        ))
-
-        val fallingMapper = world.mapper<FallingComponent>()
-        val types = listOf(
-            listOf(1, 2, 3),
-            listOf(1, 3, 2),
-            listOf(1, 2, 3),
-        )
-        for (r in 0 until 3) {
-            for (c in 0 until 3) {
-                val e = world.createEntity()
-                world.addComponent(e, GridPositionComponent(r, c))
-                world.addComponent(e, JellyTypeComponent(types[r][c]))
-                if (c == 0) fallingMapper.set(e, FallingComponent(fromRow = r - 1, toRow = r))
-            }
-        }
-
-        world.process()
-
-        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
-        assertEquals(GamePhase.PROCESSING_MATCHES, board.phase)
+        assertEquals(GamePhase.PROCESSING, board.phase)
     }
 }
 
 class SwapResolveSystemTest {
 
     @Test
-    fun resolveReturnSwap_goesToIdle() {
+    fun resolveReturnSwap_goesToProcessing() {
         val swapResolveSystem = SwapResolveSystem()
         val world = World { with(swapResolveSystem) }
 
@@ -411,35 +439,73 @@ class SwapResolveSystemTest {
         world.process()
 
         val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
-        assertEquals(GamePhase.IDLE, board.phase)
+        assertEquals(GamePhase.PROCESSING, board.phase)
         assertFalse(swappingMapper.has(eA))
         assertFalse(swappingMapper.has(eB))
         assertEquals(0, posMapper[eA]!!.row)
         assertEquals(0, posMapper[eA]!!.col)
         assertEquals(0, posMapper[eB]!!.row)
         assertEquals(1, posMapper[eB]!!.col)
+        assertFalse(board.awaitingSwapResult)
+    }
+
+    @Test
+    fun resolveForwardSwap_setsAwaitingAndGoesToProcessing() {
+        val swapResolveSystem = SwapResolveSystem()
+        val world = World { with(swapResolveSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.RESOLVE_SWAP,
+            gridSize = 3,
+        ))
+
+        val swappingMapper = world.mapper<SwappingComponent>()
+
+        val eA = world.createEntity()
+        world.addComponent(eA, GridPositionComponent(0, 0))
+        world.addComponent(eA, JellyTypeComponent(1))
+        swappingMapper.set(eA, SwappingComponent(
+            sourceRow = 0, sourceCol = 0,
+            targetRow = 0, targetCol = 1,
+        ))
+
+        val eB = world.createEntity()
+        world.addComponent(eB, GridPositionComponent(0, 1))
+        world.addComponent(eB, JellyTypeComponent(2))
+        swappingMapper.set(eB, SwappingComponent(
+            sourceRow = 0, sourceCol = 1,
+            targetRow = 0, targetCol = 0,
+        ))
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(GamePhase.PROCESSING, board.phase)
+        assertTrue(board.awaitingSwapResult)
+        assertEquals(eA, board.lastSwapEntityA)
+        assertEquals(eB, board.lastSwapEntityB)
     }
 }
 
 // ---------------------------------------------------------------------------
-// Bomb Mechanic Tests
+// Bomb / Effects Tests
 // ---------------------------------------------------------------------------
 
-class BombExplodeSystemTest {
+class EffectResolveSystemTest {
 
     @Test
     fun bombExplosion_removes3x3Area_andAddsScore() {
-        val bombExplodeSystem = BombExplodeSystem()
-        val world = World { with(bombExplodeSystem) }
+        val effectResolveSystem = EffectResolveSystem()
+        val world = World { with(effectResolveSystem) }
 
         val boardEntity = world.createEntity()
         world.addComponent(boardEntity, BoardStateComponent(
-            phase = GamePhase.RESOLVE_EXPLOSION,
+            phase = GamePhase.RESOLVE_EFFECTS,
             gridSize = 5,
         ))
 
         val gridSize = 5
-        val entities = Array(gridSize) { IntArray(gridSize) }
         for (r in 0 until gridSize) {
             for (c in 0 until gridSize) {
                 val e = world.createEntity()
@@ -449,15 +515,14 @@ class BombExplodeSystemTest {
                     world.addComponent(e, BombComponent())
                     world.addComponent(e, ExplodingComponent())
                 }
-                entities[r][c] = e
             }
         }
 
         world.process()
 
         val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
-        assertEquals(90, board.score) // 3x3 = 9 cells removed * 10 points
-        assertEquals(GamePhase.ANIMATING_FALL, board.phase)
+        assertEquals(90, board.score)
+        assertEquals(GamePhase.PROCESSING, board.phase)
 
         val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
         assertEquals(gridSize * gridSize, world.getEntitiesForAspect(aspect).size)
@@ -465,12 +530,12 @@ class BombExplodeSystemTest {
 
     @Test
     fun bombAtCorner_removesOnlyOnBoardCells() {
-        val bombExplodeSystem = BombExplodeSystem()
-        val world = World { with(bombExplodeSystem) }
+        val effectResolveSystem = EffectResolveSystem()
+        val world = World { with(effectResolveSystem) }
 
         val boardEntity = world.createEntity()
         world.addComponent(boardEntity, BoardStateComponent(
-            phase = GamePhase.RESOLVE_EXPLOSION,
+            phase = GamePhase.RESOLVE_EFFECTS,
             gridSize = 3,
         ))
 
@@ -490,14 +555,14 @@ class BombExplodeSystemTest {
         world.process()
 
         val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
-        // Corner bomb at (0,0): only cells (0,0), (0,1), (1,0), (1,1) are on grid = 4 cells
         assertEquals(40, board.score)
+        assertEquals(GamePhase.PROCESSING, board.phase)
     }
 
     @Test
-    fun skipsWhenPhaseIsNotResolveExplosion() {
-        val bombExplodeSystem = BombExplodeSystem()
-        val world = World { with(bombExplodeSystem) }
+    fun skipsWhenPhaseIsNotResolveEffects() {
+        val effectResolveSystem = EffectResolveSystem()
+        val world = World { with(effectResolveSystem) }
 
         val boardEntity = world.createEntity()
         world.addComponent(boardEntity, BoardStateComponent(
@@ -516,7 +581,7 @@ class BombExplodeSystemTest {
 class SwapResolveWithBombTest {
 
     @Test
-    fun swapWithBomb_transitionsToAnimatingExplosion() {
+    fun swapWithBomb_marksExplodingAndGoesToProcessing() {
         val swapResolveSystem = SwapResolveSystem()
         val world = World { with(swapResolveSystem) }
 
@@ -549,11 +614,12 @@ class SwapResolveWithBombTest {
         world.process()
 
         val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
-        assertEquals(GamePhase.ANIMATING_EXPLOSION, board.phase)
+        assertEquals(GamePhase.PROCESSING, board.phase)
         assertTrue(explodingMapper.has(eBomb))
         assertFalse(explodingMapper.has(eGem))
         assertFalse(swappingMapper.has(eBomb))
         assertFalse(swappingMapper.has(eGem))
+        assertFalse(board.awaitingSwapResult)
     }
 }
 
@@ -583,7 +649,6 @@ class FindMatchesWithBombsTest {
     @Test
     fun bombsBreakGemRuns() {
         val world = World()
-        // Row: 1, bomb, 1 — should NOT be a match of 3
         val e1 = world.createEntity()
         world.addComponent(e1, GridPositionComponent(0, 0))
         world.addComponent(e1, JellyTypeComponent(1))

@@ -65,37 +65,47 @@ class ExplodingComponent : Component
 // ---------------------------------------------------------------------------
 
 /**
- * Tracks the current phase of the game loop. Systems gate their processing
- * on the active phase to ensure correct ordering of game events.
+ * Tracks the current phase of the game loop.
+ *
+ * The game processes phases in a fixed order:
+ *   animate swap → fall down → activate effects → process matches → idle
+ *
+ * After any phase produces work, the loop restarts from the beginning.
+ * Animation phases pause the loop until Compose finishes the animation and
+ * fires a callback that transitions to the corresponding RESOLVE phase.
  */
 enum class GamePhase {
     /** Waiting for player input. */
     IDLE,
     /** Swap animation is playing (forward or return). */
     ANIMATING_SWAP,
-    /** Swap animation finished; resolve the outcome. */
+    /** Swap animation finished; resolve positions. */
     RESOLVE_SWAP,
-    /** Bomb explosion animation is playing (growing square). */
-    ANIMATING_EXPLOSION,
-    /** Explosion animation finished; remove cells and apply gravity. */
-    RESOLVE_EXPLOSION,
-    /** Match detection + gravity cascade in progress. */
-    PROCESSING_MATCHES,
     /** Fall animation is playing. */
     ANIMATING_FALL,
-    /** Fall animation finished; check for cascading matches. */
-    RESOLVE_FALL;
+    /** Fall animation finished; clear falling markers. */
+    RESOLVE_FALL,
+    /** Effect animations are playing (e.g. bomb explosion). */
+    ANIMATING_EFFECTS,
+    /** Effect animations finished; execute effect logic. */
+    RESOLVE_EFFECTS,
+    /** Main processing loop: checks each step in order and decides next phase. */
+    PROCESSING;
 
     val isAnimating: Boolean get() =
-        this == ANIMATING_SWAP || this == ANIMATING_FALL || this == ANIMATING_EXPLOSION
+        this == ANIMATING_SWAP || this == ANIMATING_FALL || this == ANIMATING_EFFECTS
 }
 
 /**
  * Singleton component on the "board" entity. Holds game-level state that
- * systems need to coordinate: current phase, score, and grid dimensions.
+ * systems need to coordinate: current phase, score, grid dimensions,
+ * and swap-return tracking.
  */
 data class BoardStateComponent(
     var phase: GamePhase = GamePhase.IDLE,
     var score: Int = 0,
     val gridSize: Int = 7,
+    var awaitingSwapResult: Boolean = false,
+    var lastSwapEntityA: Int = -1,
+    var lastSwapEntityB: Int = -1,
 ) : Component

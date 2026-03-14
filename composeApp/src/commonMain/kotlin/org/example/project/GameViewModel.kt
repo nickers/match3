@@ -8,7 +8,7 @@ import kotlin.random.Random
 
 const val GRID_SIZE = 7
 const val SWAP_DURATION_MS = 300
-const val EXPLOSION_DURATION_MS = 400
+const val EFFECTS_DURATION_MS = 400
 
 class GameViewModel(
     private val initialGrid: List<List<Int>>? = null,
@@ -17,17 +17,17 @@ class GameViewModel(
     // Systems – registered in strict processing order
     private val inputSystem = InputSystem()
     private val swapResolveSystem = SwapResolveSystem()
-    private val bombExplodeSystem = BombExplodeSystem()
-    private val matchGravitySystem = MatchGravitySystem()
     private val fallResolveSystem = FallResolveSystem()
+    private val effectResolveSystem = EffectResolveSystem()
+    private val gameLoopSystem = GameLoopSystem()
     private val renderSystem = RenderSystem()
 
     private val world = World {
         with(inputSystem)
         with(swapResolveSystem)
-        with(bombExplodeSystem)
-        with(matchGravitySystem)
         with(fallResolveSystem)
+        with(effectResolveSystem)
+        with(gameLoopSystem)
         with(renderSystem)
     }
 
@@ -78,10 +78,10 @@ class GameViewModel(
         processWorld()
     }
 
-    fun onExplosionAnimationFinished() {
+    fun onEffectsAnimationFinished() {
         val board = boardState() ?: return
-        if (board.phase != GamePhase.ANIMATING_EXPLOSION) return
-        board.phase = GamePhase.RESOLVE_EXPLOSION
+        if (board.phase != GamePhase.ANIMATING_EFFECTS) return
+        board.phase = GamePhase.RESOLVE_EFFECTS
         processWorld()
     }
 
