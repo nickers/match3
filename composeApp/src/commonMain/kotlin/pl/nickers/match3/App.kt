@@ -26,7 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -72,6 +71,7 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.CornerRadius
 
 private val GRID_PADDING = 24.dp
 private const val GAP_FRACTION = 0.06f
@@ -156,7 +156,6 @@ private fun GameGrid(
         val stride = cellPx + gapPx
         val cellDp = with(density) { cellPx.toDp() }
         val gridDp = with(density) { (n * cellPx + (n - 1) * gapPx).toDp() }
-        val frameDp = gridDp + BOARD_FRAME_THICKNESS * 2
         val swapCompletionDispatched = remember(swappingCells) { mutableStateOf(false) }
         val completedSwapIds = remember(swappingCells) { mutableSetOf<Int>() }
 
@@ -168,6 +167,8 @@ private fun GameGrid(
                 onFallFinished()
             }
         }
+
+        val gridSizePx = n * cellPx + (n - 1) * gapPx
 
         Box(
             modifier = Modifier
@@ -431,19 +432,32 @@ private fun GameGrid(
             }
         }
 
-        Canvas(modifier = Modifier.size(frameDp)) {
+        val bgColor = MaterialTheme.colorScheme.primaryContainer
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width / 2
+            val cy = size.height / 2
+            val gL = cx - gridSizePx / 2
+            val gT = cy - gridSizePx / 2
+            val gR = cx + gridSizePx / 2
+            val gB = cy + gridSizePx / 2
             val cornerPx = BOARD_FRAME_CORNER_RADIUS.toPx()
+
+            drawRect(bgColor, Offset(0f, 0f), Size(size.width, gT))
+            drawRect(bgColor, Offset(0f, gB), Size(size.width, size.height - gB))
+            drawRect(bgColor, Offset(0f, gT), Size(gL, gridSizePx))
+            drawRect(bgColor, Offset(gR, gT), Size(size.width - gR, gridSizePx))
+
             drawRoundRect(
                 color = Color(0xFF4E342E),
-                topLeft = Offset(framePx / 2f, framePx / 2f),
-                size = Size(size.width - framePx, size.height - framePx),
+                topLeft = Offset(gL - framePx / 2, gT - framePx / 2),
+                size = Size(gridSizePx + framePx, gridSizePx + framePx),
                 cornerRadius = CornerRadius(cornerPx, cornerPx),
                 style = Stroke(width = framePx),
             )
             drawRoundRect(
-                color = Color(0xFFBCAAA4).copy(alpha = 0.3f),
-                topLeft = Offset(framePx - 0.5f, framePx - 0.5f),
-                size = Size(size.width - (framePx - 0.5f) * 2, size.height - (framePx - 0.5f) * 2),
+                color = Color(0xFF8D6E63).copy(alpha = 0.5f),
+                topLeft = Offset(gL - 0.75f, gT - 0.75f),
+                size = Size(gridSizePx + 1.5f, gridSizePx + 1.5f),
                 cornerRadius = CornerRadius((cornerPx - framePx / 2).coerceAtLeast(1f)),
                 style = Stroke(width = 1.5f),
             )
