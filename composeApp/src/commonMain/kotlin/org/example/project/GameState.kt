@@ -28,4 +28,5 @@ data class GameState(
     val score: Int = 0,
     val fallingCells: FallingCells = emptyMap(),
     val explodingBombs: List<GridPos> = emptyList(),
+    val fullBoardExplosion: Boolean = false,
 )

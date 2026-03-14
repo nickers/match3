@@ -578,6 +578,132 @@ class EffectResolveSystemTest {
     }
 }
 
+class FullBoardExplosionTest {
+
+    @Test
+    fun twoBombsSwapped_removesAllCells() {
+        val effectResolveSystem = EffectResolveSystem()
+        val world = World { with(effectResolveSystem) }
+
+        val gridSize = 3
+        val boardEntity = world.createEntity()
+        val board = BoardStateComponent(
+            phase = GamePhase.RESOLVE_EFFECTS,
+            gridSize = gridSize,
+            fullBoardExplosion = true,
+        )
+        world.addComponent(boardEntity, board)
+
+        val bombA = world.createEntity()
+        world.addComponent(bombA, GridPositionComponent(1, 1))
+        world.addComponent(bombA, JellyTypeComponent(0))
+        world.addComponent(bombA, BombComponent())
+        world.addComponent(bombA, ExplodingComponent())
+
+        val bombB = world.createEntity()
+        world.addComponent(bombB, GridPositionComponent(1, 2))
+        world.addComponent(bombB, JellyTypeComponent(0))
+        world.addComponent(bombB, BombComponent())
+        world.addComponent(bombB, ExplodingComponent())
+
+        for (r in 0 until gridSize) {
+            for (c in 0 until gridSize) {
+                if (r == 1 && c == 1 || r == 1 && c == 2) continue
+                val e = world.createEntity()
+                world.addComponent(e, GridPositionComponent(r, c))
+                world.addComponent(e, JellyTypeComponent((r * gridSize + c) % 6 + 1))
+            }
+        }
+
+        world.process()
+
+        // All 9 cells removed = 90 points, grid fully replaced
+        assertEquals(90, board.score)
+        assertEquals(GamePhase.PROCESSING, board.phase)
+        assertFalse(board.fullBoardExplosion)
+
+        val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
+        assertEquals(gridSize * gridSize, world.getEntitiesForAspect(aspect).size)
+    }
+
+    @Test
+    fun swapResolve_setsFlagWhenBothAreBombs() {
+        val swapResolveSystem = SwapResolveSystem()
+        val world = World { with(swapResolveSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.RESOLVE_SWAP,
+            gridSize = 3,
+        ))
+
+        val swappingMapper = world.mapper<SwappingComponent>()
+        val explodingMapper = world.mapper<ExplodingComponent>()
+
+        val eBombA = world.createEntity()
+        world.addComponent(eBombA, GridPositionComponent(0, 0))
+        world.addComponent(eBombA, JellyTypeComponent(0))
+        world.addComponent(eBombA, BombComponent())
+        swappingMapper.set(eBombA, SwappingComponent(
+            sourceRow = 0, sourceCol = 0,
+            targetRow = 0, targetCol = 1,
+        ))
+
+        val eBombB = world.createEntity()
+        world.addComponent(eBombB, GridPositionComponent(0, 1))
+        world.addComponent(eBombB, JellyTypeComponent(0))
+        world.addComponent(eBombB, BombComponent())
+        swappingMapper.set(eBombB, SwappingComponent(
+            sourceRow = 0, sourceCol = 1,
+            targetRow = 0, targetCol = 0,
+        ))
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertEquals(GamePhase.PROCESSING, board.phase)
+        assertTrue(board.fullBoardExplosion)
+        assertTrue(explodingMapper.has(eBombA))
+        assertTrue(explodingMapper.has(eBombB))
+    }
+
+    @Test
+    fun swapResolve_doesNotSetFlagWhenOnlyOneBomb() {
+        val swapResolveSystem = SwapResolveSystem()
+        val world = World { with(swapResolveSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(
+            phase = GamePhase.RESOLVE_SWAP,
+            gridSize = 3,
+        ))
+
+        val swappingMapper = world.mapper<SwappingComponent>()
+
+        val eBomb = world.createEntity()
+        world.addComponent(eBomb, GridPositionComponent(0, 0))
+        world.addComponent(eBomb, JellyTypeComponent(0))
+        world.addComponent(eBomb, BombComponent())
+        swappingMapper.set(eBomb, SwappingComponent(
+            sourceRow = 0, sourceCol = 0,
+            targetRow = 0, targetCol = 1,
+        ))
+
+        val eGem = world.createEntity()
+        world.addComponent(eGem, GridPositionComponent(0, 1))
+        world.addComponent(eGem, JellyTypeComponent(1))
+        swappingMapper.set(eGem, SwappingComponent(
+            sourceRow = 0, sourceCol = 1,
+            targetRow = 0, targetCol = 0,
+        ))
+
+        world.process()
+
+        val board = world.getComponent(boardEntity, BoardStateComponent::class)!!
+        assertFalse(board.fullBoardExplosion)
+    }
+}
+
 class SwapResolveWithBombTest {
 
     @Test

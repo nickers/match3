@@ -307,6 +307,7 @@ class SwapResolveSystem : BaseSystem() {
             if (hasBombA || hasBombB) {
                 if (hasBombA) explodingMapper.set(eA, ExplodingComponent())
                 if (hasBombB) explodingMapper.set(eB, ExplodingComponent())
+                board.fullBoardExplosion = hasBombA && hasBombB
                 board.awaitingSwapResult = false
             } else {
                 board.awaitingSwapResult = true
@@ -371,24 +372,32 @@ class EffectResolveSystem(
             return
         }
 
-        val entitiesToRemove = mutableSetOf<Int>()
         val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
+        val entitiesToRemove: Set<Int>
 
-        for (bombEntity in exploding) {
-            val pos = posMapper[bombEntity] ?: continue
-            explodingMapper.remove(bombEntity)
-            for (dr in -1..1) {
-                for (dc in -1..1) {
-                    val r = pos.row + dr
-                    val c = pos.col + dc
-                    if (r in 0 until board.gridSize && c in 0 until board.gridSize) {
-                        world.getEntitiesForAspect(aspect).firstOrNull {
-                            val p = posMapper[it]!!
-                            p.row == r && p.col == c
-                        }?.let { entitiesToRemove.add(it) }
+        if (board.fullBoardExplosion) {
+            board.fullBoardExplosion = false
+            exploding.forEach { explodingMapper.remove(it) }
+            entitiesToRemove = world.getEntitiesForAspect(aspect).toSet()
+        } else {
+            val collected = mutableSetOf<Int>()
+            for (bombEntity in exploding) {
+                val pos = posMapper[bombEntity] ?: continue
+                explodingMapper.remove(bombEntity)
+                for (dr in -1..1) {
+                    for (dc in -1..1) {
+                        val r = pos.row + dr
+                        val c = pos.col + dc
+                        if (r in 0 until board.gridSize && c in 0 until board.gridSize) {
+                            world.getEntitiesForAspect(aspect).firstOrNull {
+                                val p = posMapper[it]!!
+                                p.row == r && p.col == c
+                            }?.let { collected.add(it) }
+                        }
                     }
                 }
             }
+            entitiesToRemove = collected
         }
 
         if (entitiesToRemove.isNotEmpty()) {
@@ -571,6 +580,7 @@ class RenderSystem : BaseSystem() {
             score = board.score,
             fallingCells = fallingCells,
             explodingBombs = explodingBombs,
+            fullBoardExplosion = board.fullBoardExplosion,
         )
     }
 }

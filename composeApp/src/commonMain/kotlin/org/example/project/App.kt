@@ -290,27 +290,28 @@ private fun GameGrid(
             )
 
             if (explodingBombs.isNotEmpty()) {
+                val isFullBoard = state.fullBoardExplosion
                 val explosionProgress = remember(explodingBombs) { Animatable(0f) }
 
                 LaunchedEffect(explodingBombs) {
                     explosionProgress.snapTo(0f)
                     explosionProgress.animateTo(
                         1f,
-                        tween(durationMillis = EFFECTS_DURATION_MS),
+                        tween(durationMillis = if (isFullBoard) EFFECTS_DURATION_MS * 2 else EFFECTS_DURATION_MS),
                     )
                     onEffectsFinished()
                 }
 
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    val fullSize = 3 * stride - gapPx
                     val p = explosionProgress.value
-                    for (bombPos in explodingBombs) {
-                        val centerX = bombPos.col * stride + cellPx / 2f
-                        val centerY = bombPos.row * stride + cellPx / 2f
-                        val currentSize = p * fullSize
-                        val alpha = 0.55f * (1f - p * 0.4f)
+                    if (isFullBoard) {
+                        val gridFullSize = n * cellPx + (n - 1) * gapPx
+                        val centerX = gridFullSize / 2f
+                        val centerY = gridFullSize / 2f
+                        val currentSize = p * gridFullSize
+                        val alpha = 0.6f * (1f - p * 0.3f)
                         drawRect(
-                            color = Color(0xFFFF4400).copy(alpha = alpha),
+                            color = Color(0xFFFF2200).copy(alpha = alpha),
                             topLeft = Offset(
                                 centerX - currentSize / 2,
                                 centerY - currentSize / 2,
@@ -318,14 +319,39 @@ private fun GameGrid(
                             size = Size(currentSize, currentSize),
                         )
                         drawRect(
-                            color = Color.White.copy(alpha = alpha * 0.6f),
+                            color = Color.White.copy(alpha = alpha * 0.7f),
                             topLeft = Offset(
                                 centerX - currentSize / 2,
                                 centerY - currentSize / 2,
                             ),
                             size = Size(currentSize, currentSize),
-                            style = Stroke(width = cellPx * 0.06f),
+                            style = Stroke(width = cellPx * 0.1f),
                         )
+                    } else {
+                        val singleSize = 3 * stride - gapPx
+                        for (bombPos in explodingBombs) {
+                            val centerX = bombPos.col * stride + cellPx / 2f
+                            val centerY = bombPos.row * stride + cellPx / 2f
+                            val currentSize = p * singleSize
+                            val alpha = 0.55f * (1f - p * 0.4f)
+                            drawRect(
+                                color = Color(0xFFFF4400).copy(alpha = alpha),
+                                topLeft = Offset(
+                                    centerX - currentSize / 2,
+                                    centerY - currentSize / 2,
+                                ),
+                                size = Size(currentSize, currentSize),
+                            )
+                            drawRect(
+                                color = Color.White.copy(alpha = alpha * 0.6f),
+                                topLeft = Offset(
+                                    centerX - currentSize / 2,
+                                    centerY - currentSize / 2,
+                                ),
+                                size = Size(currentSize, currentSize),
+                                style = Stroke(width = cellPx * 0.06f),
+                            )
+                        }
                     }
                 }
             }

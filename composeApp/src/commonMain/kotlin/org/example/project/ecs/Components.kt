@@ -108,4 +108,5 @@ data class BoardStateComponent(
     var awaitingSwapResult: Boolean = false,
     var lastSwapEntityA: Int = -1,
     var lastSwapEntityB: Int = -1,
+    var fullBoardExplosion: Boolean = false,
 ) : Component
