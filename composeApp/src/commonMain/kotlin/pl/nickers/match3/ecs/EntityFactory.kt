@@ -17,6 +17,7 @@ fun World.createJellyEntity(
     addComponent(entityId, JellyTypeComponent(type = jellyType))
     addComponent(entityId, BodyImageComponent(image = "jelly_$jellyType.png"))
     addComponent(entityId, JellyFaceComponent(image = "face_${random.nextInt(1, 7)}.png"))
+    addComponent(entityId, DraggableComponent())
     return entityId
 }
 
@@ -34,6 +35,7 @@ fun World.createBombEntity(
     addComponent(entityId, BodyImageComponent(image = "bomb.png"))
     addComponent(entityId, BombComponent())
     addComponent(entityId, BombFaceComponent(image = "bomb_face_${random.nextInt(1, 3)}.png"))
+    addComponent(entityId, DraggableComponent())
     return entityId
 }
 
@@ -59,6 +61,7 @@ fun World.createEntityFromSelection(
             addComponent(entityId, JellyFaceComponent(image = selection.faceImage))
         }
     }
+    addComponent(entityId, DraggableComponent())
     return entityId
 }
 

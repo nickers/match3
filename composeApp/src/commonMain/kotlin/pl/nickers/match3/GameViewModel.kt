@@ -37,6 +37,7 @@ class GameViewModel(
     private val typeMapper = world.mapper<JellyTypeComponent>()
     private val bodyImageMapper = world.mapper<BodyImageComponent>()
     private val bombMapper = world.mapper<BombComponent>()
+    private val draggableMapper = world.mapper<DraggableComponent>()
 
     private var boardEntity: Int = -1
 
@@ -96,13 +97,16 @@ class GameViewModel(
         for (row in 0 until GRID_SIZE) {
             for (col in 0 until GRID_SIZE) {
                 val eA = findEntityAt(row, col) ?: continue
+                if (!draggableMapper.has(eA)) continue
                 val isBombA = bombMapper.has(eA)
                 if (col + 1 < GRID_SIZE) {
                     val eB = findEntityAt(row, col + 1) ?: continue
+                    if (!draggableMapper.has(eB)) continue
                     if (isBombA || bombMapper.has(eB) || swapProducesMatch(eA, eB)) return true
                 }
                 if (row + 1 < GRID_SIZE) {
                     val eB = findEntityAt(row + 1, col) ?: continue
+                    if (!draggableMapper.has(eB)) continue
                     if (isBombA || bombMapper.has(eB) || swapProducesMatch(eA, eB)) return true
                 }
             }

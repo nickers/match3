@@ -35,6 +35,12 @@ data class JellyFaceComponent(val image: String) : Component
 data class BombFaceComponent(val image: String) : Component
 
 /**
+ * Marker: the entity can be dragged / selected for swapping by the player.
+ * Entities without this component are treated as immovable obstacles.
+ */
+class DraggableComponent : Component
+
+/**
  * Marker: the entity is currently selected by the player.
  */
 class SelectedComponent : Component
