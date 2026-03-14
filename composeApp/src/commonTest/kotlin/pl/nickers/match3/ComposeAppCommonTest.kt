@@ -746,6 +746,227 @@ class FullBoardExplosionTest {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Draggability Tests
+// ---------------------------------------------------------------------------
+
+class DraggableComponentTest {
+
+    private fun buildWorld(): World {
+        val inputSystem = InputSystem()
+        val swapResolveSystem = SwapResolveSystem()
+        val gameLoopSystem = GameLoopSystem()
+        val renderSystem = RenderSystem()
+        val world = World {
+            with(inputSystem)
+            with(swapResolveSystem)
+            with(gameLoopSystem)
+            with(renderSystem)
+        }
+        return world
+    }
+
+    @Test
+    fun clickOnNonDraggableEntity_doesNotSelect() {
+        val inputSystem = InputSystem()
+        val renderSystem = RenderSystem()
+        val world = World {
+            with(inputSystem)
+            with(renderSystem)
+        }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(phase = GamePhase.IDLE, gridSize = 3))
+
+        val e = world.createEntity()
+        world.addComponent(e, GridPositionComponent(0, 0))
+        world.addComponent(e, JellyTypeComponent(1))
+        world.addComponent(e, BodyImageComponent("jelly_1.png"))
+        world.addComponent(e, JellyFaceComponent("face_1.png"))
+        // No DraggableComponent
+
+        inputSystem.enqueueClick(0, 0)
+        world.process()
+
+        val selectedMapper = world.mapper<SelectedComponent>()
+        assertFalse(selectedMapper.has(e))
+    }
+
+    @Test
+    fun clickOnDraggableEntity_selects() {
+        val inputSystem = InputSystem()
+        val renderSystem = RenderSystem()
+        val world = World {
+            with(inputSystem)
+            with(renderSystem)
+        }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(phase = GamePhase.IDLE, gridSize = 3))
+
+        val e = world.createEntity()
+        world.addComponent(e, GridPositionComponent(0, 0))
+        world.addComponent(e, JellyTypeComponent(1))
+        world.addComponent(e, BodyImageComponent("jelly_1.png"))
+        world.addComponent(e, JellyFaceComponent("face_1.png"))
+        world.addComponent(e, DraggableComponent())
+
+        inputSystem.enqueueClick(0, 0)
+        world.process()
+
+        val selectedMapper = world.mapper<SelectedComponent>()
+        assertTrue(selectedMapper.has(e))
+    }
+
+    @Test
+    fun dragSwapWithNonDraggableSource_doesNotSwap() {
+        val inputSystem = InputSystem()
+        val renderSystem = RenderSystem()
+        val world = World {
+            with(inputSystem)
+            with(renderSystem)
+        }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(phase = GamePhase.IDLE, gridSize = 3))
+
+        val eA = world.createEntity()
+        world.addComponent(eA, GridPositionComponent(0, 0))
+        world.addComponent(eA, JellyTypeComponent(1))
+        // eA is NOT draggable
+
+        val eB = world.createEntity()
+        world.addComponent(eB, GridPositionComponent(0, 1))
+        world.addComponent(eB, JellyTypeComponent(2))
+        world.addComponent(eB, DraggableComponent())
+
+        inputSystem.enqueueDragSwap(0, 0, 0, 1)
+        world.process()
+
+        val swappingMapper = world.mapper<SwappingComponent>()
+        assertFalse(swappingMapper.has(eA))
+        assertFalse(swappingMapper.has(eB))
+    }
+
+    @Test
+    fun dragSwapWithNonDraggableTarget_doesNotSwap() {
+        val inputSystem = InputSystem()
+        val renderSystem = RenderSystem()
+        val world = World {
+            with(inputSystem)
+            with(renderSystem)
+        }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(phase = GamePhase.IDLE, gridSize = 3))
+
+        val eA = world.createEntity()
+        world.addComponent(eA, GridPositionComponent(0, 0))
+        world.addComponent(eA, JellyTypeComponent(1))
+        world.addComponent(eA, DraggableComponent())
+
+        val eB = world.createEntity()
+        world.addComponent(eB, GridPositionComponent(0, 1))
+        world.addComponent(eB, JellyTypeComponent(2))
+        // eB is NOT draggable
+
+        inputSystem.enqueueDragSwap(0, 0, 0, 1)
+        world.process()
+
+        val swappingMapper = world.mapper<SwappingComponent>()
+        assertFalse(swappingMapper.has(eA))
+        assertFalse(swappingMapper.has(eB))
+    }
+
+    @Test
+    fun dragSwapWithBothDraggable_triggersSwap() {
+        val inputSystem = InputSystem()
+        val renderSystem = RenderSystem()
+        val world = World {
+            with(inputSystem)
+            with(renderSystem)
+        }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(phase = GamePhase.IDLE, gridSize = 3))
+
+        val eA = world.createEntity()
+        world.addComponent(eA, GridPositionComponent(0, 0))
+        world.addComponent(eA, JellyTypeComponent(1))
+        world.addComponent(eA, DraggableComponent())
+
+        val eB = world.createEntity()
+        world.addComponent(eB, GridPositionComponent(0, 1))
+        world.addComponent(eB, JellyTypeComponent(2))
+        world.addComponent(eB, DraggableComponent())
+
+        inputSystem.enqueueDragSwap(0, 0, 0, 1)
+        world.process()
+
+        val swappingMapper = world.mapper<SwappingComponent>()
+        assertTrue(swappingMapper.has(eA))
+        assertTrue(swappingMapper.has(eB))
+    }
+
+    @Test
+    fun renderSystem_exposesIsDraggable() {
+        val renderSystem = RenderSystem()
+        val world = World { with(renderSystem) }
+
+        val boardEntity = world.createEntity()
+        world.addComponent(boardEntity, BoardStateComponent(phase = GamePhase.IDLE, gridSize = 2))
+
+        val draggable = world.createEntity()
+        world.addComponent(draggable, GridPositionComponent(0, 0))
+        world.addComponent(draggable, JellyTypeComponent(1))
+        world.addComponent(draggable, BodyImageComponent("jelly_1.png"))
+        world.addComponent(draggable, JellyFaceComponent("face_1.png"))
+        world.addComponent(draggable, DraggableComponent())
+
+        val fixed = world.createEntity()
+        world.addComponent(fixed, GridPositionComponent(0, 1))
+        world.addComponent(fixed, JellyTypeComponent(2))
+        world.addComponent(fixed, BodyImageComponent("jelly_2.png"))
+        world.addComponent(fixed, JellyFaceComponent("face_2.png"))
+
+        // Fill remaining cells
+        val e3 = world.createEntity()
+        world.addComponent(e3, GridPositionComponent(1, 0))
+        world.addComponent(e3, JellyTypeComponent(3))
+        world.addComponent(e3, BodyImageComponent("jelly_3.png"))
+        world.addComponent(e3, JellyFaceComponent("face_3.png"))
+        val e4 = world.createEntity()
+        world.addComponent(e4, GridPositionComponent(1, 1))
+        world.addComponent(e4, JellyTypeComponent(4))
+        world.addComponent(e4, BodyImageComponent("jelly_4.png"))
+        world.addComponent(e4, JellyFaceComponent("face_4.png"))
+
+        world.process()
+
+        val state = renderSystem.gameState
+        assertTrue(state.grid[0][0].isDraggable)
+        assertFalse(state.grid[0][1].isDraggable)
+    }
+
+    @Test
+    fun entityFactory_addsDraggableByDefault() {
+        val world = World()
+        val random = kotlin.random.Random(42)
+
+        val jellyId = world.createJellyEntity(0, 0, 1, random)
+        val bombId = world.createBombEntity(0, 1, random)
+
+        val catalog = EntityCatalog.default()
+        val selection = catalog.selectRandom(random)
+        val selectionId = world.createEntityFromSelection(0, 2, selection)
+
+        val draggableMapper = world.mapper<DraggableComponent>()
+        assertTrue(draggableMapper.has(jellyId), "Jelly entities should be draggable")
+        assertTrue(draggableMapper.has(bombId), "Bomb entities should be draggable")
+        assertTrue(draggableMapper.has(selectionId), "Catalog-spawned entities should be draggable")
+    }
+}
+
 class SwapResolveWithBombTest {
 
     @Test

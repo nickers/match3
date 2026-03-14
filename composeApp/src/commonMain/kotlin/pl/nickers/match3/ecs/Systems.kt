@@ -161,11 +161,13 @@ class InputSystem : BaseSystem() {
     private lateinit var posMapper: ComponentMapper<GridPositionComponent>
     private lateinit var selectedMapper: ComponentMapper<SelectedComponent>
     private lateinit var swappingMapper: ComponentMapper<SwappingComponent>
+    private lateinit var draggableMapper: ComponentMapper<DraggableComponent>
 
     override fun initialize() {
         posMapper = world.mapper()
         selectedMapper = world.mapper()
         swappingMapper = world.mapper()
+        draggableMapper = world.mapper()
     }
 
     fun enqueueClick(row: Int, col: Int) {
@@ -196,6 +198,7 @@ class InputSystem : BaseSystem() {
 
     private fun handleCellClick(row: Int, col: Int, board: BoardStateComponent) {
         val clickedEntity = world.findEntityAt(row, col) ?: return
+        if (!draggableMapper.has(clickedEntity)) return
         val selectedEntity = findSelectedEntity()
 
         when {
@@ -207,7 +210,9 @@ class InputSystem : BaseSystem() {
 
             isAdjacentEntities(selectedEntity, clickedEntity) -> {
                 selectedMapper.remove(selectedEntity)
-                triggerSwap(selectedEntity, clickedEntity, board)
+                if (draggableMapper.has(clickedEntity)) {
+                    triggerSwap(selectedEntity, clickedEntity, board)
+                }
             }
 
             else -> {
@@ -220,6 +225,7 @@ class InputSystem : BaseSystem() {
     private fun handleDragSwap(event: Event.Drag, board: BoardStateComponent) {
         val entityA = world.findEntityAt(event.fromRow, event.fromCol) ?: return
         val entityB = world.findEntityAt(event.toRow, event.toCol) ?: return
+        if (!draggableMapper.has(entityA) || !draggableMapper.has(entityB)) return
         if (!isAdjacentEntities(entityA, entityB)) return
         findSelectedEntity()?.let { selectedMapper.remove(it) }
         triggerSwap(entityA, entityB, board)
@@ -518,6 +524,7 @@ class RenderSystem : BaseSystem() {
     private lateinit var bombMapper: ComponentMapper<BombComponent>
     private lateinit var explodingMapper: ComponentMapper<ExplodingComponent>
     private lateinit var fullBoardMapper: ComponentMapper<FullBoardExplosionComponent>
+    private lateinit var draggableMapper: ComponentMapper<DraggableComponent>
 
     var gameState: GameState = GameState(grid = emptyList())
         private set
@@ -533,6 +540,7 @@ class RenderSystem : BaseSystem() {
         bombMapper = world.mapper()
         explodingMapper = world.mapper()
         fullBoardMapper = world.mapper()
+        draggableMapper = world.mapper()
     }
 
     override fun processSystem() {
@@ -561,6 +569,7 @@ class RenderSystem : BaseSystem() {
                     isBomb = isBomb,
                     bodyImage = bodyImage,
                     faceImage = faceImage,
+                    isDraggable = draggableMapper.has(entityId),
                 )
             }
         }

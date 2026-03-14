@@ -180,6 +180,9 @@ private fun GameGrid(
                         val startPos = GridPos(row, col)
                         val pointerId = down.id
 
+                        val sourceCell = grid.getOrNull(row)?.getOrNull(col)
+                        val sourceDraggable = sourceCell?.isDraggable == true
+
                         var everExceededThreshold = false
 
                         while (true) {
@@ -198,6 +201,11 @@ private fun GameGrid(
                                 break
                             }
 
+                            if (!sourceDraggable) {
+                                change.consume()
+                                continue
+                            }
+
                             val dx = change.position.x - startX
                             val dy = change.position.y - startY
 
@@ -214,7 +222,10 @@ private fun GameGrid(
                                     DragDirection.LEFT -> GridPos(row, col - 1)
                                     DragDirection.RIGHT -> GridPos(row, col + 1)
                                 }
-                                if (target.row in 0 until n && target.col in 0 until n) {
+                                val targetCell = grid.getOrNull(target.row)?.getOrNull(target.col)
+                                if (target.row in 0 until n && target.col in 0 until n
+                                    && targetCell?.isDraggable == true
+                                ) {
                                     dragState = DragInfo(startPos, direction, target)
                                 } else {
                                     dragState = null

@@ -14,6 +14,7 @@ data class JellyCell(
     val isBomb: Boolean = false,
     val bodyImage: String = "jelly_1.png",     // body drawable filename
     val faceImage: String = "face_1.png",      // face overlay drawable filename
+    val isDraggable: Boolean = true,           // whether the player can drag/select this entity
 )
 
 /** For each entity id, (fromRow, toRow) describing the fall animation. */
