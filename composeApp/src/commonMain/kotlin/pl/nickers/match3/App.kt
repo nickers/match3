@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -70,9 +71,12 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.clipToBounds
 
 private val GRID_PADDING = 24.dp
 private const val GAP_FRACTION = 0.06f
+private val BOARD_FRAME_THICKNESS = 6.dp
+private val BOARD_FRAME_CORNER_RADIUS = 10.dp
 
 /** Fraction of cell size the pointer must travel before a drag is recognised. */
 private const val DRAG_THRESHOLD_FRACTION = 0.25f
@@ -144,13 +148,15 @@ private fun GameGrid(
     ) {
         val density = LocalDensity.current
         val paddingPx = with(density) { padding.toPx() }
-        val available = min(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat()) - paddingPx * 2
+        val framePx = with(density) { BOARD_FRAME_THICKNESS.toPx() }
+        val available = min(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat()) - paddingPx * 2 - framePx * 2
         val n = GRID_SIZE
         val cellPx = available / (n + GAP_FRACTION * (n - 1))
         val gapPx = cellPx * GAP_FRACTION
         val stride = cellPx + gapPx
         val cellDp = with(density) { cellPx.toDp() }
         val gridDp = with(density) { (n * cellPx + (n - 1) * gapPx).toDp() }
+        val frameDp = gridDp + BOARD_FRAME_THICKNESS * 2
         val swapCompletionDispatched = remember(swappingCells) { mutableStateOf(false) }
         val completedSwapIds = remember(swappingCells) { mutableSetOf<Int>() }
 
@@ -166,6 +172,7 @@ private fun GameGrid(
         Box(
             modifier = Modifier
                 .size(gridDp)
+                .clipToBounds()
                 .pointerInput(Unit) {
                     val localCellPx = size.width.toFloat() / (n + GAP_FRACTION * (n - 1))
                     val localStride = localCellPx + localCellPx * GAP_FRACTION
@@ -422,6 +429,24 @@ private fun GameGrid(
                     drawPath(headPath, arrowColor)
                 }
             }
+        }
+
+        Canvas(modifier = Modifier.size(frameDp)) {
+            val cornerPx = BOARD_FRAME_CORNER_RADIUS.toPx()
+            drawRoundRect(
+                color = Color(0xFF4E342E),
+                topLeft = Offset(framePx / 2f, framePx / 2f),
+                size = Size(size.width - framePx, size.height - framePx),
+                cornerRadius = CornerRadius(cornerPx, cornerPx),
+                style = Stroke(width = framePx),
+            )
+            drawRoundRect(
+                color = Color(0xFFBCAAA4).copy(alpha = 0.3f),
+                topLeft = Offset(framePx - 0.5f, framePx - 0.5f),
+                size = Size(size.width - (framePx - 0.5f) * 2, size.height - (framePx - 0.5f) * 2),
+                cornerRadius = CornerRadius((cornerPx - framePx / 2).coerceAtLeast(1f)),
+                style = Stroke(width = 1.5f),
+            )
         }
     }
 }
