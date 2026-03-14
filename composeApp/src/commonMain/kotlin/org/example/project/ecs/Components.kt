@@ -47,29 +47,69 @@ data class FallingComponent(
     val toRow: Int,
 ) : Component
 
+/**
+ * Marker: the entity is a bomb rather than a regular gem.
+ * Bombs do not participate in match detection. Swapping a bomb with any gem
+ * causes an explosion that removes all cells in the 3×3 area centred on the bomb.
+ */
+class BombComponent : Component
+
+/**
+ * Marker: attached to a bomb entity that is currently exploding.
+ * The bomb's [GridPositionComponent] supplies the explosion centre.
+ */
+class ExplodingComponent : Component
+
+/**
+ * Marker: attached to an exploding bomb entity to indicate that the
+ * explosion should cover the entire board (e.g. two bombs swapped).
+ */
+class FullBoardExplosionComponent : Component
+
+/**
+ * Attached to one of the two entities involved in a forward swap that
+ * has not yet been validated. [otherEntity] is the id of the second
+ * entity. If the processing loop finds no matches / effects, it uses
+ * this component to create a return-swap animation.
+ */
+data class PendingSwapValidationComponent(
+    val otherEntity: Int,
+) : Component
+
 // ---------------------------------------------------------------------------
 // Game-level state
 // ---------------------------------------------------------------------------
 
 /**
- * Tracks the current phase of the game loop. Systems gate their processing
- * on the active phase to ensure correct ordering of game events.
+ * Tracks the current phase of the game loop.
+ *
+ * The game processes phases in a fixed order:
+ *   animate swap → fall down → activate effects → process matches → idle
+ *
+ * After any phase produces work, the loop restarts from the beginning.
+ * Animation phases pause the loop until Compose finishes the animation and
+ * fires a callback that transitions to the corresponding RESOLVE phase.
  */
 enum class GamePhase {
     /** Waiting for player input. */
     IDLE,
     /** Swap animation is playing (forward or return). */
     ANIMATING_SWAP,
-    /** Swap animation finished; resolve the outcome. */
+    /** Swap animation finished; resolve positions. */
     RESOLVE_SWAP,
-    /** Match detection + gravity cascade in progress. */
-    PROCESSING_MATCHES,
     /** Fall animation is playing. */
     ANIMATING_FALL,
-    /** Fall animation finished; check for cascading matches. */
-    RESOLVE_FALL;
+    /** Fall animation finished; clear falling markers. */
+    RESOLVE_FALL,
+    /** Effect animations are playing (e.g. bomb explosion). */
+    ANIMATING_EFFECTS,
+    /** Effect animations finished; execute effect logic. */
+    RESOLVE_EFFECTS,
+    /** Main processing loop: checks each step in order and decides next phase. */
+    PROCESSING;
 
-    val isAnimating: Boolean get() = this == ANIMATING_SWAP || this == ANIMATING_FALL
+    val isAnimating: Boolean get() =
+        this == ANIMATING_SWAP || this == ANIMATING_FALL || this == ANIMATING_EFFECTS
 }
 
 /**

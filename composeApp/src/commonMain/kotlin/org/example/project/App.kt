@@ -58,6 +58,8 @@ import org.jetbrains.compose.resources.painterResource
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 
 private val GRID_PADDING = 24.dp
 private const val GAP_FRACTION = 0.06f
@@ -92,6 +94,7 @@ fun App() {
                 onDragSwap = vm::onDragSwap,
                 onSwapFinished = vm::onSwapAnimationFinished,
                 onFallFinished = vm::onFallAnimationFinished,
+                onEffectsFinished = vm::onEffectsAnimationFinished,
             )
 
             ScoreDisplay(
@@ -110,10 +113,12 @@ private fun GameGrid(
     onDragSwap: (from: GridPos, to: GridPos) -> Unit,
     onSwapFinished: () -> Unit,
     onFallFinished: () -> Unit,
+    onEffectsFinished: () -> Unit,
 ) {
     val grid = state.grid
     val swappingCells = state.swappingCells
     val fallingCells = state.fallingCells
+    val explodingBombs = state.explodingBombs
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
@@ -284,6 +289,73 @@ private fun GameGrid(
                 }
             )
 
+            if (explodingBombs.isNotEmpty()) {
+                val isFullBoard = state.fullBoardExplosion
+                val explosionProgress = remember(explodingBombs) { Animatable(0f) }
+
+                LaunchedEffect(explodingBombs) {
+                    explosionProgress.snapTo(0f)
+                    explosionProgress.animateTo(
+                        1f,
+                        tween(durationMillis = if (isFullBoard) EFFECTS_DURATION_MS * 2 else EFFECTS_DURATION_MS),
+                    )
+                    onEffectsFinished()
+                }
+
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val p = explosionProgress.value
+                    if (isFullBoard) {
+                        val gridFullSize = n * cellPx + (n - 1) * gapPx
+                        val centerX = gridFullSize / 2f
+                        val centerY = gridFullSize / 2f
+                        val currentSize = p * gridFullSize
+                        val alpha = 0.6f * (1f - p * 0.3f)
+                        drawRect(
+                            color = Color(0xFFFF2200).copy(alpha = alpha),
+                            topLeft = Offset(
+                                centerX - currentSize / 2,
+                                centerY - currentSize / 2,
+                            ),
+                            size = Size(currentSize, currentSize),
+                        )
+                        drawRect(
+                            color = Color.White.copy(alpha = alpha * 0.7f),
+                            topLeft = Offset(
+                                centerX - currentSize / 2,
+                                centerY - currentSize / 2,
+                            ),
+                            size = Size(currentSize, currentSize),
+                            style = Stroke(width = cellPx * 0.1f),
+                        )
+                    } else {
+                        val singleSize = 3 * stride - gapPx
+                        for (bombPos in explodingBombs) {
+                            val centerX = bombPos.col * stride + cellPx / 2f
+                            val centerY = bombPos.row * stride + cellPx / 2f
+                            val currentSize = p * singleSize
+                            val alpha = 0.55f * (1f - p * 0.4f)
+                            drawRect(
+                                color = Color(0xFFFF4400).copy(alpha = alpha),
+                                topLeft = Offset(
+                                    centerX - currentSize / 2,
+                                    centerY - currentSize / 2,
+                                ),
+                                size = Size(currentSize, currentSize),
+                            )
+                            drawRect(
+                                color = Color.White.copy(alpha = alpha * 0.6f),
+                                topLeft = Offset(
+                                    centerX - currentSize / 2,
+                                    centerY - currentSize / 2,
+                                ),
+                                size = Size(currentSize, currentSize),
+                                style = Stroke(width = cellPx * 0.06f),
+                            )
+                        }
+                    }
+                }
+            }
+
             val currentDrag = dragState
             if (currentDrag != null) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -380,12 +452,44 @@ private fun JellyItem(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Image(
-            painter = painterResource(cell.type.toDrawableRes()),
-            contentDescription = "Jelly ${cell.type}",
-            modifier = Modifier.size(cellSize),
-            contentScale = ContentScale.Fit,
+        if (cell.isBomb) {
+            BombItem(cellSize)
+        } else {
+            Image(
+                painter = painterResource(cell.type.toDrawableRes()),
+                contentDescription = "Jelly ${cell.type}",
+                modifier = Modifier.size(cellSize),
+                contentScale = ContentScale.Fit,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BombItem(cellSize: Dp) {
+    Canvas(modifier = Modifier.size(cellSize)) {
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val bodyRadius = size.minDimension * 0.35f
+
+        drawCircle(Color(0xFF2D2D2D), radius = bodyRadius, center = Offset(cx, cy))
+        drawCircle(
+            Color(0xFF4A4A4A),
+            radius = bodyRadius * 0.55f,
+            center = Offset(cx - bodyRadius * 0.18f, cy - bodyRadius * 0.18f),
         )
+
+        val fuseStart = Offset(cx + bodyRadius * 0.55f, cy - bodyRadius * 0.55f)
+        val fuseEnd = Offset(cx + bodyRadius * 1.05f, cy - bodyRadius * 1.05f)
+        drawLine(
+            Color(0xFF8B5E3C),
+            start = fuseStart,
+            end = fuseEnd,
+            strokeWidth = size.minDimension * 0.045f,
+            cap = StrokeCap.Round,
+        )
+        drawCircle(Color(0xFFFF6B00), radius = size.minDimension * 0.055f, center = fuseEnd)
+        drawCircle(Color(0xFFFFDD00), radius = size.minDimension * 0.025f, center = fuseEnd)
     }
 }
 

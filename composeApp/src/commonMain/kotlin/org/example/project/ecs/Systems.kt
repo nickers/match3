@@ -12,25 +12,37 @@ import kotlin.random.Random
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Convenience accessor for the singleton [BoardStateComponent] in a [World].
- */
 fun World.boardState(): BoardStateComponent? {
     val entities = getEntitiesForAspect(Aspect.all(BoardStateComponent::class))
     return entities.firstOrNull()?.let { getComponent(it, BoardStateComponent::class) }
 }
 
 /**
+ * Finds the grid entity at the given [row],[col] position, or `null`.
+ */
+fun World.findEntityAt(row: Int, col: Int): Int? {
+    val posMapper = mapper<GridPositionComponent>()
+    val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
+    return getEntitiesForAspect(aspect).firstOrNull {
+        val pos = posMapper[it]!!
+        pos.row == row && pos.col == col
+    }
+}
+
+/**
  * Pure function: scans the grid for horizontal and vertical runs of 3+
  * identical gem types and returns the entity IDs involved.
+ * Bombs (entities with [BombComponent]) are excluded from match detection.
  */
 fun findMatchesOnGrid(world: World, gridSize: Int): Set<Int> {
     val posMapper = world.mapper<GridPositionComponent>()
     val typeMapper = world.mapper<JellyTypeComponent>()
+    val bombMapper = world.mapper<BombComponent>()
 
     val grid = Array(gridSize) { IntArray(gridSize) { -1 } }
     val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
     world.getEntitiesForAspect(aspect).forEach { entityId ->
+        if (bombMapper.has(entityId)) return@forEach
         val pos = posMapper[entityId]!!
         if (pos.row in 0 until gridSize && pos.col in 0 until gridSize) {
             grid[pos.row][pos.col] = entityId
@@ -86,6 +98,56 @@ fun findMatchesOnGrid(world: World, gridSize: Int): Set<Int> {
     return matched
 }
 
+/**
+ * Deletes [entitiesToRemove], compacts each column downward, and spawns
+ * new entities (with 1/30 bomb chance) to fill the gaps.
+ * Surviving entities that shift downward receive a [FallingComponent];
+ * newly created entities always receive one (entering from above the board).
+ */
+fun applyGravityToGrid(
+    world: World,
+    entitiesToRemove: Set<Int>,
+    gridSize: Int,
+    random: Random = Random.Default,
+) {
+    entitiesToRemove.forEach { world.deleteEntity(it) }
+
+    val posMapper = world.mapper<GridPositionComponent>()
+    val fallingMapper = world.mapper<FallingComponent>()
+    val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
+
+    for (col in 0 until gridSize) {
+        val surviving = world.getEntitiesForAspect(aspect)
+            .filter { posMapper[it]!!.col == col }
+            .sortedBy { posMapper[it]!!.row }
+
+        val numNew = gridSize - surviving.size
+
+        surviving.forEachIndexed { idx, entityId ->
+            val pos = posMapper[entityId]!!
+            val oldRow = pos.row
+            val newRow = numNew + idx
+            pos.row = newRow
+            pos.col = col
+            if (oldRow != newRow) {
+                fallingMapper.set(entityId, FallingComponent(fromRow = oldRow, toRow = newRow))
+            }
+        }
+
+        for (i in 0 until numNew) {
+            val entityId = world.createEntity()
+            world.addComponent(entityId, GridPositionComponent(row = i, col = col))
+            if (random.nextInt(30) == 0) {
+                world.addComponent(entityId, JellyTypeComponent(type = 0))
+                world.addComponent(entityId, BombComponent())
+            } else {
+                world.addComponent(entityId, JellyTypeComponent(type = random.nextInt(1, 7)))
+            }
+            fallingMapper.set(entityId, FallingComponent(fromRow = -(numNew - i), toRow = i))
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Systems – processed in registration order every frame via World.process()
 // ---------------------------------------------------------------------------
@@ -93,9 +155,6 @@ fun findMatchesOnGrid(world: World, gridSize: Int): Set<Int> {
 /**
  * Handles player input: cell selection and swap initiation.
  * Active only during [GamePhase.IDLE].
- *
- * Queries entities with [GridPositionComponent] + [JellyTypeComponent] for
- * hit-testing and [SelectedComponent] for current selection state.
  */
 class InputSystem : BaseSystem() {
     private sealed class Event {
@@ -142,7 +201,7 @@ class InputSystem : BaseSystem() {
     }
 
     private fun handleCellClick(row: Int, col: Int, board: BoardStateComponent) {
-        val clickedEntity = findEntityAt(row, col, board.gridSize) ?: return
+        val clickedEntity = world.findEntityAt(row, col) ?: return
         val selectedEntity = findSelectedEntity()
 
         when {
@@ -165,8 +224,8 @@ class InputSystem : BaseSystem() {
     }
 
     private fun handleDragSwap(event: Event.Drag, board: BoardStateComponent) {
-        val entityA = findEntityAt(event.fromRow, event.fromCol, board.gridSize) ?: return
-        val entityB = findEntityAt(event.toRow, event.toCol, board.gridSize) ?: return
+        val entityA = world.findEntityAt(event.fromRow, event.fromCol) ?: return
+        val entityB = world.findEntityAt(event.toRow, event.toCol) ?: return
         if (!isAdjacentEntities(entityA, entityB)) return
         findSelectedEntity()?.let { selectedMapper.remove(it) }
         triggerSwap(entityA, entityB, board)
@@ -186,14 +245,6 @@ class InputSystem : BaseSystem() {
         board.phase = GamePhase.ANIMATING_SWAP
     }
 
-    fun findEntityAt(row: Int, col: Int, gridSize: Int): Int? {
-        val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
-        return world.getEntitiesForAspect(aspect).firstOrNull {
-            val pos = posMapper[it]!!
-            pos.row == row && pos.col == col
-        }
-    }
-
     private fun findSelectedEntity(): Int? {
         return world.getEntitiesForAspect(Aspect.all(SelectedComponent::class)).firstOrNull()
     }
@@ -208,20 +259,31 @@ class InputSystem : BaseSystem() {
 }
 
 /**
- * Resolves the outcome of a completed swap animation.
+ * Resolves swap positions after a swap animation finishes.
  * Active during [GamePhase.RESOLVE_SWAP].
  *
- * Queries entities with [SwappingComponent] to apply final positions, then
- * uses [findMatchesOnGrid] to decide: proceed to match processing, or
- * initiate a return swap.
+ * Applies final grid positions. For a return-swap, simply clears the
+ * components. For a forward swap, detects bombs (marks [ExplodingComponent]
+ * and optionally [FullBoardExplosionComponent]) or attaches
+ * [PendingSwapValidationComponent] so the game loop can create a return-swap
+ * if neither matches nor effects occur.
+ * Always transitions to [GamePhase.PROCESSING].
  */
 class SwapResolveSystem : BaseSystem() {
     private lateinit var posMapper: ComponentMapper<GridPositionComponent>
     private lateinit var swappingMapper: ComponentMapper<SwappingComponent>
+    private lateinit var bombMapper: ComponentMapper<BombComponent>
+    private lateinit var explodingMapper: ComponentMapper<ExplodingComponent>
+    private lateinit var fullBoardMapper: ComponentMapper<FullBoardExplosionComponent>
+    private lateinit var pendingSwapMapper: ComponentMapper<PendingSwapValidationComponent>
 
     override fun initialize() {
         posMapper = world.mapper()
         swappingMapper = world.mapper()
+        bombMapper = world.mapper()
+        explodingMapper = world.mapper()
+        fullBoardMapper = world.mapper()
+        pendingSwapMapper = world.mapper()
     }
 
     override fun processSystem() {
@@ -239,127 +301,32 @@ class SwapResolveSystem : BaseSystem() {
         posMapper[eA]!!.setTo(swapA.targetPosition)
         posMapper[eB]!!.setTo(swapB.targetPosition)
 
-        if (swapA.isReturning && swapB.isReturning) {
-            swappingMapper.remove(eA)
-            swappingMapper.remove(eB)
-            board.phase = GamePhase.IDLE
-            return
-        }
+        swappingMapper.remove(eA)
+        swappingMapper.remove(eB)
 
-        val matches = findMatchesOnGrid(world, board.gridSize)
+        if (!swapA.isReturning) {
+            val hasBombA = bombMapper.has(eA)
+            val hasBombB = bombMapper.has(eB)
 
-        if (matches.isEmpty()) {
-            swappingMapper.set(eA, SwappingComponent(
-                sourceRow = swapA.targetRow, sourceCol = swapA.targetCol,
-                targetRow = swapA.sourceRow, targetCol = swapA.sourceCol,
-                isReturning = true,
-            ))
-            swappingMapper.set(eB, SwappingComponent(
-                sourceRow = swapB.targetRow, sourceCol = swapB.targetCol,
-                targetRow = swapB.sourceRow, targetCol = swapB.sourceCol,
-                isReturning = true,
-            ))
-            board.phase = GamePhase.ANIMATING_SWAP
-        } else {
-            swappingMapper.remove(eA)
-            swappingMapper.remove(eB)
-            board.phase = GamePhase.PROCESSING_MATCHES
-        }
-    }
-}
-
-/**
- * Detects matches and applies gravity in a cascade loop.
- * Active during [GamePhase.PROCESSING_MATCHES].
- *
- * Queries entities with [GridPositionComponent] + [JellyTypeComponent] for
- * match detection and gravity fill. Loops internally until either falling
- * cells need animating or no further matches exist.
- */
-class MatchGravitySystem(
-    private val random: Random = Random.Default,
-) : BaseSystem() {
-    private lateinit var posMapper: ComponentMapper<GridPositionComponent>
-    private lateinit var typeMapper: ComponentMapper<JellyTypeComponent>
-    private lateinit var fallingMapper: ComponentMapper<FallingComponent>
-
-    override fun initialize() {
-        posMapper = world.mapper()
-        typeMapper = world.mapper()
-        fallingMapper = world.mapper()
-    }
-
-    override fun processSystem() {
-        val board = world.boardState() ?: return
-        if (board.phase != GamePhase.PROCESSING_MATCHES) return
-
-        var matches = findMatchesOnGrid(world, board.gridSize)
-        while (matches.isNotEmpty()) {
-            val result = applyGravity(matches, board.gridSize)
-            board.score += result.scoreGained
-
-            if (result.hasFallingCells) {
-                board.phase = GamePhase.ANIMATING_FALL
-                return
-            }
-            matches = findMatchesOnGrid(world, board.gridSize)
-        }
-
-        board.phase = GamePhase.IDLE
-    }
-
-    private fun applyGravity(matches: Set<Int>, gridSize: Int): GravityResult {
-        matches.forEach { world.deleteEntity(it) }
-
-        val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
-        var hasFalling = false
-
-        for (col in 0 until gridSize) {
-            val surviving = world.getEntitiesForAspect(aspect)
-                .filter { posMapper[it]!!.col == col }
-                .sortedBy { posMapper[it]!!.row }
-
-            val numNew = gridSize - surviving.size
-
-            surviving.forEachIndexed { idx, entityId ->
-                val pos = posMapper[entityId]!!
-                val oldRow = pos.row
-                val newRow = numNew + idx
-                pos.row = newRow
-                pos.col = col
-                if (oldRow != newRow) {
-                    fallingMapper.set(entityId, FallingComponent(fromRow = oldRow, toRow = newRow))
-                    hasFalling = true
+            if (hasBombA || hasBombB) {
+                if (hasBombA) explodingMapper.set(eA, ExplodingComponent())
+                if (hasBombB) explodingMapper.set(eB, ExplodingComponent())
+                if (hasBombA && hasBombB) {
+                    fullBoardMapper.set(eA, FullBoardExplosionComponent())
                 }
-            }
-
-            for (i in 0 until numNew) {
-                val entityId = world.createEntity()
-                world.addComponent(entityId, GridPositionComponent(row = i, col = col))
-                world.addComponent(entityId, JellyTypeComponent(type = random.nextInt(1, 7)))
-                fallingMapper.set(entityId, FallingComponent(fromRow = -(numNew - i), toRow = i))
-                hasFalling = true
+            } else {
+                pendingSwapMapper.set(eA, PendingSwapValidationComponent(otherEntity = eB))
             }
         }
 
-        return GravityResult(
-            scoreGained = matches.size * 10,
-            hasFallingCells = hasFalling,
-        )
+        board.phase = GamePhase.PROCESSING
     }
-
-    data class GravityResult(
-        val scoreGained: Int,
-        val hasFallingCells: Boolean,
-    )
 }
 
 /**
- * Clears [FallingComponent] after a fall animation and checks for cascading
- * matches. Active during [GamePhase.RESOLVE_FALL].
- *
- * Queries entities with [FallingComponent] and removes the component from
- * each, then delegates to [findMatchesOnGrid] to decide the next phase.
+ * Clears [FallingComponent] markers after a fall animation finishes.
+ * Active during [GamePhase.RESOLVE_FALL].
+ * Always transitions to [GamePhase.PROCESSING].
  */
 class FallResolveSystem : BaseSystem() {
     private lateinit var fallingMapper: ComponentMapper<FallingComponent>
@@ -372,16 +339,170 @@ class FallResolveSystem : BaseSystem() {
         val board = world.boardState() ?: return
         if (board.phase != GamePhase.RESOLVE_FALL) return
 
-        val fallingEntities = world.getEntitiesForAspect(Aspect.all(FallingComponent::class))
-        if (fallingEntities.isEmpty()) {
+        world.getEntitiesForAspect(Aspect.all(FallingComponent::class))
+            .forEach { fallingMapper.remove(it) }
+
+        board.phase = GamePhase.PROCESSING
+    }
+}
+
+/**
+ * Resolves pending effects (currently: bomb explosions) after the effect
+ * animation finishes. Active during [GamePhase.RESOLVE_EFFECTS].
+ *
+ * Checks for [FullBoardExplosionComponent] to decide between a full-board
+ * clear and per-bomb 3×3 removal. Awards score and applies gravity.
+ * Always transitions to [GamePhase.PROCESSING].
+ */
+class EffectResolveSystem(
+    private val random: Random = Random.Default,
+) : BaseSystem() {
+    private lateinit var posMapper: ComponentMapper<GridPositionComponent>
+    private lateinit var explodingMapper: ComponentMapper<ExplodingComponent>
+    private lateinit var fullBoardMapper: ComponentMapper<FullBoardExplosionComponent>
+
+    override fun initialize() {
+        posMapper = world.mapper()
+        explodingMapper = world.mapper()
+        fullBoardMapper = world.mapper()
+    }
+
+    override fun processSystem() {
+        val board = world.boardState() ?: return
+        if (board.phase != GamePhase.RESOLVE_EFFECTS) return
+
+        val exploding = world.getEntitiesForAspect(Aspect.all(ExplodingComponent::class))
+        if (exploding.isEmpty()) {
+            board.phase = GamePhase.PROCESSING
+            return
+        }
+
+        val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
+        val isFullBoard = exploding.any { fullBoardMapper.has(it) }
+        val entitiesToRemove: Set<Int>
+
+        if (isFullBoard) {
+            exploding.forEach {
+                explodingMapper.remove(it)
+                fullBoardMapper.remove(it)
+            }
+            entitiesToRemove = world.getEntitiesForAspect(aspect).toSet()
+        } else {
+            val collected = mutableSetOf<Int>()
+            for (bombEntity in exploding) {
+                val pos = posMapper[bombEntity] ?: continue
+                explodingMapper.remove(bombEntity)
+                for (dr in -1..1) {
+                    for (dc in -1..1) {
+                        val r = pos.row + dr
+                        val c = pos.col + dc
+                        if (r in 0 until board.gridSize && c in 0 until board.gridSize) {
+                            world.findEntityAt(r, c)?.let { collected.add(it) }
+                        }
+                    }
+                }
+            }
+            entitiesToRemove = collected
+        }
+
+        if (entitiesToRemove.isNotEmpty()) {
+            board.score += entitiesToRemove.size * 10
+            applyGravityToGrid(world, entitiesToRemove, board.gridSize, random)
+        }
+
+        board.phase = GamePhase.PROCESSING
+    }
+}
+
+/**
+ * Main game processing loop.  Active during [GamePhase.PROCESSING].
+ *
+ * Checks each step in a fixed order and either pauses for an animation
+ * or performs synchronous work and restarts the loop:
+ *
+ *  1. Pending swaps   → [GamePhase.ANIMATING_SWAP]
+ *  2. Pending falls   → [GamePhase.ANIMATING_FALL]
+ *  3. Pending effects  → [GamePhase.ANIMATING_EFFECTS]
+ *  4. Matches found   → remove + gravity (synchronous), restart loop
+ *  5. Pending swap-validation → create return-swap, restart loop
+ *  6. Nothing to do   → [GamePhase.IDLE]
+ */
+class GameLoopSystem(
+    private val random: Random = Random.Default,
+) : BaseSystem() {
+    private lateinit var posMapper: ComponentMapper<GridPositionComponent>
+    private lateinit var swappingMapper: ComponentMapper<SwappingComponent>
+    private lateinit var pendingSwapMapper: ComponentMapper<PendingSwapValidationComponent>
+
+    override fun initialize() {
+        posMapper = world.mapper()
+        swappingMapper = world.mapper()
+        pendingSwapMapper = world.mapper()
+    }
+
+    override fun processSystem() {
+        val board = world.boardState() ?: return
+        if (board.phase != GamePhase.PROCESSING) return
+
+        var iterations = 0
+        while (iterations++ < 100) {
+            if (world.getEntitiesForAspect(Aspect.all(SwappingComponent::class)).isNotEmpty()) {
+                board.phase = GamePhase.ANIMATING_SWAP
+                return
+            }
+
+            if (world.getEntitiesForAspect(Aspect.all(FallingComponent::class)).isNotEmpty()) {
+                board.phase = GamePhase.ANIMATING_FALL
+                return
+            }
+
+            if (world.getEntitiesForAspect(Aspect.all(ExplodingComponent::class)).isNotEmpty()) {
+                board.phase = GamePhase.ANIMATING_EFFECTS
+                return
+            }
+
+            val matches = findMatchesOnGrid(world, board.gridSize)
+            if (matches.isNotEmpty()) {
+                board.score += matches.size * 10
+                applyGravityToGrid(world, matches, board.gridSize, random)
+                clearPendingSwapValidations()
+                continue
+            }
+
+            val pending = world.getEntitiesForAspect(Aspect.all(PendingSwapValidationComponent::class))
+            if (pending.isNotEmpty()) {
+                val holder = pending.first()
+                val comp = pendingSwapMapper[holder]!!
+                val eA = holder
+                val eB = comp.otherEntity
+                pendingSwapMapper.remove(holder)
+                if (world.entityExists(eA) && world.entityExists(eB)) {
+                    val posA = posMapper[eA]!!
+                    val posB = posMapper[eB]!!
+                    swappingMapper.set(eA, SwappingComponent(
+                        sourceRow = posA.row, sourceCol = posA.col,
+                        targetRow = posB.row, targetCol = posB.col,
+                        isReturning = true,
+                    ))
+                    swappingMapper.set(eB, SwappingComponent(
+                        sourceRow = posB.row, sourceCol = posB.col,
+                        targetRow = posA.row, targetCol = posA.col,
+                        isReturning = true,
+                    ))
+                    continue
+                }
+            }
+
             board.phase = GamePhase.IDLE
             return
         }
 
-        fallingEntities.forEach { fallingMapper.remove(it) }
+        board.phase = GamePhase.IDLE
+    }
 
-        val matches = findMatchesOnGrid(world, board.gridSize)
-        board.phase = if (matches.isNotEmpty()) GamePhase.PROCESSING_MATCHES else GamePhase.IDLE
+    private fun clearPendingSwapValidations() {
+        world.getEntitiesForAspect(Aspect.all(PendingSwapValidationComponent::class))
+            .forEach { pendingSwapMapper.remove(it) }
     }
 }
 
@@ -389,16 +510,15 @@ class FallResolveSystem : BaseSystem() {
  * Rendering system: projects the current ECS world into an immutable
  * [GameState] snapshot that the Compose UI layer can render.
  * Runs every frame regardless of phase.
- *
- * Queries entities with [GridPositionComponent] + [JellyTypeComponent] for
- * the grid, [SelectedComponent] for selection highlight, [SwappingComponent]
- * for swap animations, and [FallingComponent] for fall animations.
  */
 class RenderSystem : BaseSystem() {
     private lateinit var posMapper: ComponentMapper<GridPositionComponent>
     private lateinit var typeMapper: ComponentMapper<JellyTypeComponent>
     private lateinit var swappingMapper: ComponentMapper<SwappingComponent>
     private lateinit var fallingMapper: ComponentMapper<FallingComponent>
+    private lateinit var bombMapper: ComponentMapper<BombComponent>
+    private lateinit var explodingMapper: ComponentMapper<ExplodingComponent>
+    private lateinit var fullBoardMapper: ComponentMapper<FullBoardExplosionComponent>
 
     var gameState: GameState = GameState(grid = emptyList())
         private set
@@ -408,6 +528,9 @@ class RenderSystem : BaseSystem() {
         typeMapper = world.mapper()
         swappingMapper = world.mapper()
         fallingMapper = world.mapper()
+        bombMapper = world.mapper()
+        explodingMapper = world.mapper()
+        fullBoardMapper = world.mapper()
     }
 
     override fun processSystem() {
@@ -421,8 +544,9 @@ class RenderSystem : BaseSystem() {
         entities.forEach { entityId ->
             val pos = posMapper[entityId]!!
             val type = typeMapper[entityId]!!.type
+            val isBomb = bombMapper.has(entityId)
             if (pos.row in 0 until gridSize && pos.col in 0 until gridSize) {
-                grid[pos.row][pos.col] = JellyCell(type = type, id = entityId)
+                grid[pos.row][pos.col] = JellyCell(type = type, id = entityId, isBomb = isBomb)
             }
         }
 
@@ -459,12 +583,20 @@ class RenderSystem : BaseSystem() {
             }
         }
 
+        val explodingEntities = world.getEntitiesForAspect(Aspect.all(ExplodingComponent::class))
+        val explodingBombs = explodingEntities.mapNotNull { entityId ->
+            posMapper[entityId]?.let { GridPos(it.row, it.col) }
+        }
+        val fullBoardExplosion = explodingEntities.any { fullBoardMapper.has(it) }
+
         gameState = GameState(
             grid = gridList,
             selected = selected,
             swappingCells = swappingCells,
             score = board.score,
             fallingCells = fallingCells,
+            explodingBombs = explodingBombs,
+            fullBoardExplosion = fullBoardExplosion,
         )
     }
 }

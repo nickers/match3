@@ -9,8 +9,9 @@ data class SwapAnimation(
 )
 
 data class JellyCell(
-    val type: Int,   // 1..6, maps to jelly_1..jelly_6
+    val type: Int,   // 1..6, maps to jelly_1..jelly_6; 0 for bombs
     val id: Int,     // stable entity identity for animation keys
+    val isBomb: Boolean = false,
 )
 
 /** For each entity id, (fromRow, toRow) describing the fall animation. */
@@ -26,4 +27,6 @@ data class GameState(
     val swappingCells: Map<Int, SwapAnimation> = emptyMap(),
     val score: Int = 0,
     val fallingCells: FallingCells = emptyMap(),
+    val explodingBombs: List<GridPos> = emptyList(),
+    val fullBoardExplosion: Boolean = false,
 )

@@ -8,6 +8,7 @@ import kotlin.random.Random
 
 const val GRID_SIZE = 7
 const val SWAP_DURATION_MS = 300
+const val EFFECTS_DURATION_MS = 400
 
 class GameViewModel(
     private val initialGrid: List<List<Int>>? = null,
@@ -16,20 +17,23 @@ class GameViewModel(
     // Systems – registered in strict processing order
     private val inputSystem = InputSystem()
     private val swapResolveSystem = SwapResolveSystem()
-    private val matchGravitySystem = MatchGravitySystem()
     private val fallResolveSystem = FallResolveSystem()
+    private val effectResolveSystem = EffectResolveSystem()
+    private val gameLoopSystem = GameLoopSystem()
     private val renderSystem = RenderSystem()
 
     private val world = World {
         with(inputSystem)
         with(swapResolveSystem)
-        with(matchGravitySystem)
         with(fallResolveSystem)
+        with(effectResolveSystem)
+        with(gameLoopSystem)
         with(renderSystem)
     }
 
     private val posMapper = world.mapper<GridPositionComponent>()
     private val typeMapper = world.mapper<JellyTypeComponent>()
+    private val bombMapper = world.mapper<BombComponent>()
 
     private var boardEntity: Int = -1
 
@@ -74,6 +78,13 @@ class GameViewModel(
         processWorld()
     }
 
+    fun onEffectsAnimationFinished() {
+        val board = boardState() ?: return
+        if (board.phase != GamePhase.ANIMATING_EFFECTS) return
+        board.phase = GamePhase.RESOLVE_EFFECTS
+        processWorld()
+    }
+
     /**
      * Returns `true` when at least one swap of adjacent gems produces a match.
      * Only right and down swaps are tested — every pair is covered exactly once.
@@ -82,13 +93,14 @@ class GameViewModel(
         for (row in 0 until GRID_SIZE) {
             for (col in 0 until GRID_SIZE) {
                 val eA = findEntityAt(row, col) ?: continue
+                val isBombA = bombMapper.has(eA)
                 if (col + 1 < GRID_SIZE) {
                     val eB = findEntityAt(row, col + 1) ?: continue
-                    if (swapProducesMatch(eA, eB)) return true
+                    if (isBombA || bombMapper.has(eB) || swapProducesMatch(eA, eB)) return true
                 }
                 if (row + 1 < GRID_SIZE) {
                     val eB = findEntityAt(row + 1, col) ?: continue
-                    if (swapProducesMatch(eA, eB)) return true
+                    if (isBombA || bombMapper.has(eB) || swapProducesMatch(eA, eB)) return true
                 }
             }
         }
@@ -142,10 +154,17 @@ class GameViewModel(
                 for (col in 0 until GRID_SIZE) {
                     val entity = world.createEntity()
                     world.addComponent(entity, GridPositionComponent(row, col))
-                    val type = seededGrid?.get(row)?.also {
-                        require(it.size == GRID_SIZE) { "Initial grid must be $GRID_SIZE x $GRID_SIZE" }
-                    }?.get(col) ?: Random.nextInt(1, 7)
-                    world.addComponent(entity, JellyTypeComponent(type))
+                    if (seededGrid != null) {
+                        val type = seededGrid[row].also {
+                            require(it.size == GRID_SIZE) { "Initial grid must be $GRID_SIZE x $GRID_SIZE" }
+                        }[col]
+                        world.addComponent(entity, JellyTypeComponent(type))
+                    } else if (Random.nextInt(30) == 0) {
+                        world.addComponent(entity, JellyTypeComponent(0))
+                        world.addComponent(entity, BombComponent())
+                    } else {
+                        world.addComponent(entity, JellyTypeComponent(Random.nextInt(1, 7)))
+                    }
                 }
             }
             if (seededGrid != null) return
@@ -194,11 +213,5 @@ class GameViewModel(
         return types
     }
 
-    private fun findEntityAt(row: Int, col: Int): Int? {
-        val aspect = Aspect.all(GridPositionComponent::class, JellyTypeComponent::class)
-        return world.getEntitiesForAspect(aspect).firstOrNull {
-            val pos = posMapper[it]!!
-            pos.row == row && pos.col == col
-        }
-    }
+    private fun findEntityAt(row: Int, col: Int): Int? = world.findEntityAt(row, col)
 }
