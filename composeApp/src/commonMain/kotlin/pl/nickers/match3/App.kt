@@ -70,9 +70,13 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.CornerRadius
 
 private val GRID_PADDING = 24.dp
 private const val GAP_FRACTION = 0.06f
+private val BOARD_FRAME_THICKNESS = 6.dp
+private val BOARD_FRAME_CORNER_RADIUS = 10.dp
 
 /** Fraction of cell size the pointer must travel before a drag is recognised. */
 private const val DRAG_THRESHOLD_FRACTION = 0.25f
@@ -144,7 +148,8 @@ private fun GameGrid(
     ) {
         val density = LocalDensity.current
         val paddingPx = with(density) { padding.toPx() }
-        val available = min(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat()) - paddingPx * 2
+        val framePx = with(density) { BOARD_FRAME_THICKNESS.toPx() }
+        val available = min(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat()) - paddingPx * 2 - framePx * 2
         val n = GRID_SIZE
         val cellPx = available / (n + GAP_FRACTION * (n - 1))
         val gapPx = cellPx * GAP_FRACTION
@@ -163,9 +168,12 @@ private fun GameGrid(
             }
         }
 
+        val gridSizePx = n * cellPx + (n - 1) * gapPx
+
         Box(
             modifier = Modifier
                 .size(gridDp)
+                .clipToBounds()
                 .pointerInput(Unit) {
                     val localCellPx = size.width.toFloat() / (n + GAP_FRACTION * (n - 1))
                     val localStride = localCellPx + localCellPx * GAP_FRACTION
@@ -433,6 +441,37 @@ private fun GameGrid(
                     drawPath(headPath, arrowColor)
                 }
             }
+        }
+
+        val bgColor = MaterialTheme.colorScheme.primaryContainer
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width / 2
+            val cy = size.height / 2
+            val gL = cx - gridSizePx / 2
+            val gT = cy - gridSizePx / 2
+            val gR = cx + gridSizePx / 2
+            val gB = cy + gridSizePx / 2
+            val cornerPx = BOARD_FRAME_CORNER_RADIUS.toPx()
+
+            drawRect(bgColor, Offset(0f, 0f), Size(size.width, gT))
+            drawRect(bgColor, Offset(0f, gB), Size(size.width, size.height - gB))
+            drawRect(bgColor, Offset(0f, gT), Size(gL, gridSizePx))
+            drawRect(bgColor, Offset(gR, gT), Size(size.width - gR, gridSizePx))
+
+            drawRoundRect(
+                color = Color(0xFF4E342E),
+                topLeft = Offset(gL - framePx / 2, gT - framePx / 2),
+                size = Size(gridSizePx + framePx, gridSizePx + framePx),
+                cornerRadius = CornerRadius(cornerPx, cornerPx),
+                style = Stroke(width = framePx),
+            )
+            drawRoundRect(
+                color = Color(0xFF8D6E63).copy(alpha = 0.5f),
+                topLeft = Offset(gL - 0.75f, gT - 0.75f),
+                size = Size(gridSizePx + 1.5f, gridSizePx + 1.5f),
+                cornerRadius = CornerRadius((cornerPx - framePx / 2).coerceAtLeast(1f)),
+                style = Stroke(width = 1.5f),
+            )
         }
     }
 }
