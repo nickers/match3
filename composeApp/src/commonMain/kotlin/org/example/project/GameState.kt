@@ -9,9 +9,11 @@ data class SwapAnimation(
 )
 
 data class JellyCell(
-    val type: Int,   // 1..6, maps to jelly_1..jelly_6; 0 for bombs
-    val id: Int,     // stable entity identity for animation keys
+    val type: Int,                             // match key: 1..N for jelly variants, 0 for bombs
+    val id: Int,                               // stable entity identity for animation keys
     val isBomb: Boolean = false,
+    val bodyImage: String = "jelly_1.png",     // body drawable filename
+    val faceImage: String = "face_1.png",      // face overlay drawable filename
 )
 
 /** For each entity id, (fromRow, toRow) describing the fall animation. */

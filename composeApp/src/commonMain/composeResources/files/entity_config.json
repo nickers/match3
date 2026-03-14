@@ -1,0 +1,42 @@
+[
+    {
+        "type": "jelly",
+        "weight": 10,
+        "face": [
+            "face_1.png",
+            "face_2.png",
+            "face_3.png",
+            "face_4.png",
+            "face_5.png"
+        ],
+        "body": [
+            "jelly_1.png",
+            "jelly_2.png",
+            "jelly_3.png",
+            "jelly_4.png",
+            "jelly_5.png",
+            "jelly_6.png"
+        ]
+    },
+    {
+        "type": "jelly",
+        "weight": 1,
+        "body": [
+            "jelly_6.png"
+        ],
+        "face": [
+            "face_6.png"
+        ]
+    },
+    {
+        "type": "bomb",
+        "weight": 0.3,
+        "body": [
+            "bomb.png"
+        ],
+        "face": [
+            "bomb_face_1.png",
+            "bomb_face_2.png"
+        ]
+    }
+]

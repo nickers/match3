@@ -13,9 +13,26 @@ data class GridPositionComponent(var row: Int, var col: Int) : Component {
 }
 
 /**
- * The visual type of a jelly gem (1–6), mapping to drawable resources.
+ * Integer match-key for a gem entity (1–N for jelly variants, 0 for bombs).
+ * Used exclusively by match-detection logic; rendering uses [BodyImageComponent].
  */
 data class JellyTypeComponent(val type: Int) : Component
+
+/**
+ * Body image filename (e.g. "jelly_3.png", "bomb.png") used for rendering.
+ * The integer match-key is stored separately in [JellyTypeComponent].
+ */
+data class BodyImageComponent(val image: String) : Component
+
+/**
+ * Face overlay image filename for regular jellies (e.g. "face_2.png").
+ */
+data class JellyFaceComponent(val image: String) : Component
+
+/**
+ * Face overlay image filename for bombs (e.g. "bomb_face_1.png").
+ */
+data class BombFaceComponent(val image: String) : Component
 
 /**
  * Marker: the entity is currently selected by the player.

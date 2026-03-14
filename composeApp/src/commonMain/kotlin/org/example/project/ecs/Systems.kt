@@ -100,7 +100,7 @@ fun findMatchesOnGrid(world: World, gridSize: Int): Set<Int> {
 
 /**
  * Deletes [entitiesToRemove], compacts each column downward, and spawns
- * new entities (with 1/30 bomb chance) to fill the gaps.
+ * new entities from the [catalog] to fill the gaps.
  * Surviving entities that shift downward receive a [FallingComponent];
  * newly created entities always receive one (entering from above the board).
  */
@@ -109,6 +109,7 @@ fun applyGravityToGrid(
     entitiesToRemove: Set<Int>,
     gridSize: Int,
     random: Random = Random.Default,
+    catalog: EntityCatalog = EntityCatalog.default(),
 ) {
     entitiesToRemove.forEach { world.deleteEntity(it) }
 
@@ -135,14 +136,7 @@ fun applyGravityToGrid(
         }
 
         for (i in 0 until numNew) {
-            val entityId = world.createEntity()
-            world.addComponent(entityId, GridPositionComponent(row = i, col = col))
-            if (random.nextInt(30) == 0) {
-                world.addComponent(entityId, JellyTypeComponent(type = 0))
-                world.addComponent(entityId, BombComponent())
-            } else {
-                world.addComponent(entityId, JellyTypeComponent(type = random.nextInt(1, 7)))
-            }
+            val entityId = world.createRandomBoardEntity(row = i, col = col, random = random, catalog = catalog)
             fallingMapper.set(entityId, FallingComponent(fromRow = -(numNew - i), toRow = i))
         }
     }
@@ -356,6 +350,7 @@ class FallResolveSystem : BaseSystem() {
  */
 class EffectResolveSystem(
     private val random: Random = Random.Default,
+    private val catalog: EntityCatalog = EntityCatalog.default(),
 ) : BaseSystem() {
     private lateinit var posMapper: ComponentMapper<GridPositionComponent>
     private lateinit var explodingMapper: ComponentMapper<ExplodingComponent>
@@ -407,7 +402,7 @@ class EffectResolveSystem(
 
         if (entitiesToRemove.isNotEmpty()) {
             board.score += entitiesToRemove.size * 10
-            applyGravityToGrid(world, entitiesToRemove, board.gridSize, random)
+            applyGravityToGrid(world, entitiesToRemove, board.gridSize, random, catalog)
         }
 
         board.phase = GamePhase.PROCESSING
@@ -429,6 +424,7 @@ class EffectResolveSystem(
  */
 class GameLoopSystem(
     private val random: Random = Random.Default,
+    private val catalog: EntityCatalog = EntityCatalog.default(),
 ) : BaseSystem() {
     private lateinit var posMapper: ComponentMapper<GridPositionComponent>
     private lateinit var swappingMapper: ComponentMapper<SwappingComponent>
@@ -464,7 +460,7 @@ class GameLoopSystem(
             val matches = findMatchesOnGrid(world, board.gridSize)
             if (matches.isNotEmpty()) {
                 board.score += matches.size * 10
-                applyGravityToGrid(world, matches, board.gridSize, random)
+                applyGravityToGrid(world, matches, board.gridSize, random, catalog)
                 clearPendingSwapValidations()
                 continue
             }
@@ -514,6 +510,9 @@ class GameLoopSystem(
 class RenderSystem : BaseSystem() {
     private lateinit var posMapper: ComponentMapper<GridPositionComponent>
     private lateinit var typeMapper: ComponentMapper<JellyTypeComponent>
+    private lateinit var bodyImageMapper: ComponentMapper<BodyImageComponent>
+    private lateinit var jellyFaceMapper: ComponentMapper<JellyFaceComponent>
+    private lateinit var bombFaceMapper: ComponentMapper<BombFaceComponent>
     private lateinit var swappingMapper: ComponentMapper<SwappingComponent>
     private lateinit var fallingMapper: ComponentMapper<FallingComponent>
     private lateinit var bombMapper: ComponentMapper<BombComponent>
@@ -526,6 +525,9 @@ class RenderSystem : BaseSystem() {
     override fun initialize() {
         posMapper = world.mapper()
         typeMapper = world.mapper()
+        bodyImageMapper = world.mapper()
+        jellyFaceMapper = world.mapper()
+        bombFaceMapper = world.mapper()
         swappingMapper = world.mapper()
         fallingMapper = world.mapper()
         bombMapper = world.mapper()
@@ -545,8 +547,21 @@ class RenderSystem : BaseSystem() {
             val pos = posMapper[entityId]!!
             val type = typeMapper[entityId]!!.type
             val isBomb = bombMapper.has(entityId)
+            val bodyImage = bodyImageMapper[entityId]?.image
+                ?: if (isBomb) "bomb.png" else "jelly_$type.png"
+            val faceImage = if (isBomb) {
+                bombFaceMapper[entityId]?.image ?: "bomb_face_1.png"
+            } else {
+                jellyFaceMapper[entityId]?.image ?: "face_1.png"
+            }
             if (pos.row in 0 until gridSize && pos.col in 0 until gridSize) {
-                grid[pos.row][pos.col] = JellyCell(type = type, id = entityId, isBomb = isBomb)
+                grid[pos.row][pos.col] = JellyCell(
+                    type = type,
+                    id = entityId,
+                    isBomb = isBomb,
+                    bodyImage = bodyImage,
+                    faceImage = faceImage,
+                )
             }
         }
 

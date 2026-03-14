@@ -11,15 +11,17 @@ const val SWAP_DURATION_MS = 300
 const val EFFECTS_DURATION_MS = 400
 
 class GameViewModel(
+    private val catalog: EntityCatalog = EntityCatalog.default(),
     private val initialGrid: List<List<Int>>? = null,
 ) {
+    private val random = Random.Default
 
     // Systems – registered in strict processing order
     private val inputSystem = InputSystem()
     private val swapResolveSystem = SwapResolveSystem()
     private val fallResolveSystem = FallResolveSystem()
-    private val effectResolveSystem = EffectResolveSystem()
-    private val gameLoopSystem = GameLoopSystem()
+    private val effectResolveSystem = EffectResolveSystem(random = random, catalog = catalog)
+    private val gameLoopSystem = GameLoopSystem(random = random, catalog = catalog)
     private val renderSystem = RenderSystem()
 
     private val world = World {
@@ -33,6 +35,7 @@ class GameViewModel(
 
     private val posMapper = world.mapper<GridPositionComponent>()
     private val typeMapper = world.mapper<JellyTypeComponent>()
+    private val bodyImageMapper = world.mapper<BodyImageComponent>()
     private val bombMapper = world.mapper<BombComponent>()
 
     private var boardEntity: Int = -1
@@ -152,18 +155,17 @@ class GameViewModel(
             clearGrid()
             for (row in 0 until GRID_SIZE) {
                 for (col in 0 until GRID_SIZE) {
-                    val entity = world.createEntity()
-                    world.addComponent(entity, GridPositionComponent(row, col))
                     if (seededGrid != null) {
                         val type = seededGrid[row].also {
                             require(it.size == GRID_SIZE) { "Initial grid must be $GRID_SIZE x $GRID_SIZE" }
                         }[col]
-                        world.addComponent(entity, JellyTypeComponent(type))
-                    } else if (Random.nextInt(30) == 0) {
-                        world.addComponent(entity, JellyTypeComponent(0))
-                        world.addComponent(entity, BombComponent())
+                        if (type == 0) {
+                            world.createBombEntity(row = row, col = col, random = random)
+                        } else {
+                            world.createJellyEntity(row = row, col = col, jellyType = type, random = random)
+                        }
                     } else {
-                        world.addComponent(entity, JellyTypeComponent(Random.nextInt(1, 7)))
+                        world.createRandomBoardEntity(row = row, col = col, random = random, catalog = catalog)
                     }
                 }
             }
@@ -182,10 +184,13 @@ class GameViewModel(
         while (matches.isNotEmpty()) {
             val entityId = matches.random()
             val pos = posMapper[entityId]!!
-            val neighborTypes = neighborTypes(pos.row, pos.col)
-            val candidates = (1..6).filter { it !in neighborTypes }
-            val newType = candidates.random()
-            typeMapper.set(entityId, JellyTypeComponent(newType))
+            val neighborBodyImages = neighborBodyImages(pos.row, pos.col)
+            val candidates = catalog.jellyBodyImages.filter { it !in neighborBodyImages }
+            if (candidates.isNotEmpty()) {
+                val newBodyImage = candidates.random()
+                typeMapper.set(entityId, JellyTypeComponent(catalog.typeIdForBody(newBodyImage)))
+                bodyImageMapper.set(entityId, BodyImageComponent(newBodyImage))
+            }
             matches = findMatchesOnGrid(world, GRID_SIZE)
         }
     }
@@ -201,16 +206,16 @@ class GameViewModel(
         return found
     }
 
-    private fun neighborTypes(row: Int, col: Int): Set<Int> {
-        val types = mutableSetOf<Int>()
+    private fun neighborBodyImages(row: Int, col: Int): Set<String> {
+        val images = mutableSetOf<String>()
         for ((dr, dc) in listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)) {
             val nr = row + dr
             val nc = col + dc
             if (nr in 0 until GRID_SIZE && nc in 0 until GRID_SIZE) {
-                findEntityAt(nr, nc)?.let { types.add(typeMapper[it]!!.type) }
+                findEntityAt(nr, nc)?.let { bodyImageMapper[it]?.let { c -> images.add(c.image) } }
             }
         }
-        return types
+        return images
     }
 
     private fun findEntityAt(row: Int, col: Int): Int? = world.findEntityAt(row, col)

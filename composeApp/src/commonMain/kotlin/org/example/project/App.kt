@@ -44,12 +44,22 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinproject.composeapp.generated.resources.Res
+import kotlinproject.composeapp.generated.resources.bomb
+import kotlinproject.composeapp.generated.resources.bomb_face_1
+import kotlinproject.composeapp.generated.resources.bomb_face_2
+import kotlinproject.composeapp.generated.resources.face_1
+import kotlinproject.composeapp.generated.resources.face_2
+import kotlinproject.composeapp.generated.resources.face_3
+import kotlinproject.composeapp.generated.resources.face_4
+import kotlinproject.composeapp.generated.resources.face_5
+import kotlinproject.composeapp.generated.resources.face_6
 import kotlinproject.composeapp.generated.resources.jelly_1
 import kotlinproject.composeapp.generated.resources.jelly_2
 import kotlinproject.composeapp.generated.resources.jelly_3
 import kotlinproject.composeapp.generated.resources.jelly_4
 import kotlinproject.composeapp.generated.resources.jelly_5
 import kotlinproject.composeapp.generated.resources.jelly_6
+import org.example.project.ecs.EntityCatalog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -77,30 +87,38 @@ private data class DragInfo(
 
 @Composable
 fun App() {
-    val vm = remember { GameViewModel() }
-    val state = vm.state
+    var catalog by remember { mutableStateOf<EntityCatalog?>(null) }
+    LaunchedEffect(Unit) {
+        catalog = EntityCatalog.load()
+    }
 
     MaterialTheme {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
-            GameGrid(
-                state = state,
-                padding = GRID_PADDING,
-                onCellClick = vm::onCellClick,
-                onDragSwap = vm::onDragSwap,
-                onSwapFinished = vm::onSwapAnimationFinished,
-                onFallFinished = vm::onFallAnimationFinished,
-                onEffectsFinished = vm::onEffectsAnimationFinished,
-            )
+            val loadedCatalog = catalog
+            if (loadedCatalog != null) {
+                val vm = remember { GameViewModel(catalog = loadedCatalog) }
+                val state = vm.state
 
-            ScoreDisplay(
-                score = state.score,
-                modifier = Modifier.align(Alignment.TopEnd),
-            )
+                GameGrid(
+                    state = state,
+                    padding = GRID_PADDING,
+                    onCellClick = vm::onCellClick,
+                    onDragSwap = vm::onDragSwap,
+                    onSwapFinished = vm::onSwapAnimationFinished,
+                    onFallFinished = vm::onFallAnimationFinished,
+                    onEffectsFinished = vm::onEffectsAnimationFinished,
+                )
+
+                ScoreDisplay(
+                    score = state.score,
+                    modifier = Modifier.align(Alignment.TopEnd),
+                )
+            }
         }
     }
 }
@@ -453,11 +471,17 @@ private fun JellyItem(
         contentAlignment = Alignment.Center,
     ) {
         if (cell.isBomb) {
-            BombItem(cellSize)
+            BombItem(cellSize = cellSize, bodyImage = cell.bodyImage, faceImage = cell.faceImage)
         } else {
             Image(
-                painter = painterResource(cell.type.toDrawableRes()),
-                contentDescription = "Jelly ${cell.type}",
+                painter = painterResource(cell.bodyImage.toBodyDrawableRes()),
+                contentDescription = "Jelly body",
+                modifier = Modifier.size(cellSize),
+                contentScale = ContentScale.Fit,
+            )
+            Image(
+                painter = painterResource(cell.faceImage.toFaceDrawableRes()),
+                contentDescription = "Jelly face",
                 modifier = Modifier.size(cellSize),
                 contentScale = ContentScale.Fit,
             )
@@ -466,38 +490,44 @@ private fun JellyItem(
 }
 
 @Composable
-private fun BombItem(cellSize: Dp) {
-    Canvas(modifier = Modifier.size(cellSize)) {
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        val bodyRadius = size.minDimension * 0.35f
-
-        drawCircle(Color(0xFF2D2D2D), radius = bodyRadius, center = Offset(cx, cy))
-        drawCircle(
-            Color(0xFF4A4A4A),
-            radius = bodyRadius * 0.55f,
-            center = Offset(cx - bodyRadius * 0.18f, cy - bodyRadius * 0.18f),
-        )
-
-        val fuseStart = Offset(cx + bodyRadius * 0.55f, cy - bodyRadius * 0.55f)
-        val fuseEnd = Offset(cx + bodyRadius * 1.05f, cy - bodyRadius * 1.05f)
-        drawLine(
-            Color(0xFF8B5E3C),
-            start = fuseStart,
-            end = fuseEnd,
-            strokeWidth = size.minDimension * 0.045f,
-            cap = StrokeCap.Round,
-        )
-        drawCircle(Color(0xFFFF6B00), radius = size.minDimension * 0.055f, center = fuseEnd)
-        drawCircle(Color(0xFFFFDD00), radius = size.minDimension * 0.025f, center = fuseEnd)
-    }
+private fun BombItem(cellSize: Dp, bodyImage: String, faceImage: String) {
+    Image(
+        painter = painterResource(bodyImage.toBodyDrawableRes()),
+        contentDescription = "Bomb body",
+        modifier = Modifier.size(cellSize),
+        contentScale = ContentScale.Fit,
+    )
+    Image(
+        painter = painterResource(faceImage.toFaceDrawableRes()),
+        contentDescription = "Bomb face",
+        modifier = Modifier.size(cellSize),
+        contentScale = ContentScale.Fit,
+    )
 }
 
-private fun Int.toDrawableRes(): DrawableResource = when (this) {
-    1 -> Res.drawable.jelly_1
-    2 -> Res.drawable.jelly_2
-    3 -> Res.drawable.jelly_3
-    4 -> Res.drawable.jelly_4
-    5 -> Res.drawable.jelly_5
-    else -> Res.drawable.jelly_6
-}
+private val bodyDrawables = mapOf(
+    "jelly_1.png" to Res.drawable.jelly_1,
+    "jelly_2.png" to Res.drawable.jelly_2,
+    "jelly_3.png" to Res.drawable.jelly_3,
+    "jelly_4.png" to Res.drawable.jelly_4,
+    "jelly_5.png" to Res.drawable.jelly_5,
+    "jelly_6.png" to Res.drawable.jelly_6,
+    "bomb.png" to Res.drawable.bomb,
+)
+
+private val faceDrawables = mapOf(
+    "face_1.png" to Res.drawable.face_1,
+    "face_2.png" to Res.drawable.face_2,
+    "face_3.png" to Res.drawable.face_3,
+    "face_4.png" to Res.drawable.face_4,
+    "face_5.png" to Res.drawable.face_5,
+    "face_6.png" to Res.drawable.face_6,
+    "bomb_face_1.png" to Res.drawable.bomb_face_1,
+    "bomb_face_2.png" to Res.drawable.bomb_face_2,
+)
+
+private fun String.toBodyDrawableRes(): DrawableResource =
+    bodyDrawables[this] ?: Res.drawable.jelly_1
+
+private fun String.toFaceDrawableRes(): DrawableResource =
+    faceDrawables[this] ?: Res.drawable.face_1
