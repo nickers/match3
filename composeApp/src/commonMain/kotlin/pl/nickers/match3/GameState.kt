@@ -9,9 +9,12 @@ data class SwapAnimation(
 )
 
 data class JellyCell(
-    val type: Int,                             // match key: 1..N for jelly variants, 0 for bombs
+    val type: Int,                             // match key: 1..N for jelly variants, 0 for bombs, -1 for ice cubes
     val id: Int,                               // stable entity identity for animation keys
     val isBomb: Boolean = false,
+    val isIceCube: Boolean = false,
+    val isEmpty: Boolean = false,
+    val iceCubeLife: Int = 3,
     val bodyImage: String = "jelly_1.png",     // body drawable filename
     val faceImage: String = "face_1.png",      // face overlay drawable filename
 )

@@ -22,6 +22,7 @@ class GameViewModel(
     private val fallResolveSystem = FallResolveSystem()
     private val effectResolveSystem = EffectResolveSystem(random = random, catalog = catalog)
     private val gameLoopSystem = GameLoopSystem(random = random, catalog = catalog)
+    private val matchNeighbourCleanupSystem = MatchNeighbourCleanupSystem()
     private val renderSystem = RenderSystem()
 
     private val world = World {
@@ -30,6 +31,7 @@ class GameViewModel(
         with(fallResolveSystem)
         with(effectResolveSystem)
         with(gameLoopSystem)
+        with(matchNeighbourCleanupSystem)
         with(renderSystem)
     }
 
@@ -37,6 +39,7 @@ class GameViewModel(
     private val typeMapper = world.mapper<JellyTypeComponent>()
     private val bodyImageMapper = world.mapper<BodyImageComponent>()
     private val bombMapper = world.mapper<BombComponent>()
+    private val iceCubeMapper = world.mapper<IceCubeComponent>()
 
     private var boardEntity: Int = -1
 
@@ -96,13 +99,16 @@ class GameViewModel(
         for (row in 0 until GRID_SIZE) {
             for (col in 0 until GRID_SIZE) {
                 val eA = findEntityAt(row, col) ?: continue
+                if (iceCubeMapper.has(eA)) continue
                 val isBombA = bombMapper.has(eA)
                 if (col + 1 < GRID_SIZE) {
                     val eB = findEntityAt(row, col + 1) ?: continue
+                    if (iceCubeMapper.has(eB)) continue
                     if (isBombA || bombMapper.has(eB) || swapProducesMatch(eA, eB)) return true
                 }
                 if (row + 1 < GRID_SIZE) {
                     val eB = findEntityAt(row + 1, col) ?: continue
+                    if (iceCubeMapper.has(eB)) continue
                     if (isBombA || bombMapper.has(eB) || swapProducesMatch(eA, eB)) return true
                 }
             }
@@ -171,7 +177,15 @@ class GameViewModel(
             }
             if (seededGrid != null) return
             eliminateInitialMatches()
+            placeIceCube()
         } while (!hasValidMove())
+    }
+
+    private fun placeIceCube() {
+        val row = random.nextInt(GRID_SIZE)
+        val col = random.nextInt(GRID_SIZE)
+        world.findEntityAt(row, col)?.let { world.deleteEntity(it) }
+        world.createIceCubeEntity(row = row, col = col)
     }
 
     private fun clearGrid() {

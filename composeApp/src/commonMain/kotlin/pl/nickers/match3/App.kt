@@ -53,6 +53,9 @@ import kotlinproject.composeapp.generated.resources.face_3
 import kotlinproject.composeapp.generated.resources.face_4
 import kotlinproject.composeapp.generated.resources.face_5
 import kotlinproject.composeapp.generated.resources.face_6
+import kotlinproject.composeapp.generated.resources.ice_1
+import kotlinproject.composeapp.generated.resources.ice_2
+import kotlinproject.composeapp.generated.resources.ice_3
 import kotlinproject.composeapp.generated.resources.jelly_1
 import kotlinproject.composeapp.generated.resources.jelly_2
 import kotlinproject.composeapp.generated.resources.jelly_3
@@ -215,7 +218,12 @@ private fun GameGrid(
                                     DragDirection.RIGHT -> GridPos(row, col + 1)
                                 }
                                 if (target.row in 0 until n && target.col in 0 until n) {
-                                    dragState = DragInfo(startPos, direction, target)
+                                    val sourceCell = grid.getOrNull(row)?.getOrNull(col)
+                                    if (sourceCell?.isIceCube == true) {
+                                        dragState = null
+                                    } else {
+                                        dragState = DragInfo(startPos, direction, target)
+                                    }
                                 } else {
                                     dragState = null
                                 }
@@ -285,8 +293,8 @@ private fun GameGrid(
                                     cell = cell,
                                     cellSize = cellDp,
                                     isSelected = isSelected,
-                                    offsetX = targetOffsetX.value,
-                                    offsetY = targetOffsetY.value,
+                                    offsetX = if (cell.isIceCube) 0f else targetOffsetX.value,
+                                    offsetY = if (cell.isIceCube) 0f else targetOffsetY.value,
                                 )
                             }
                         }
@@ -470,8 +478,11 @@ private fun JellyItem(
             ),
         contentAlignment = Alignment.Center,
     ) {
+        if (cell.isEmpty) return
         if (cell.isBomb) {
             BombItem(cellSize = cellSize, bodyImage = cell.bodyImage, faceImage = cell.faceImage)
+        } else if (cell.isIceCube) {
+            IceCubeItem(cellSize = cellSize, bodyImage = cell.bodyImage)
         } else {
             Image(
                 painter = painterResource(cell.bodyImage.toBodyDrawableRes()),
@@ -505,6 +516,16 @@ private fun BombItem(cellSize: Dp, bodyImage: String, faceImage: String) {
     )
 }
 
+@Composable
+private fun IceCubeItem(cellSize: Dp, bodyImage: String) {
+    Image(
+        painter = painterResource(bodyImage.toBodyDrawableRes()),
+        contentDescription = "Ice cube",
+        modifier = Modifier.size(cellSize),
+        contentScale = ContentScale.Fit,
+    )
+}
+
 private val bodyDrawables = mapOf(
     "jelly_1.png" to Res.drawable.jelly_1,
     "jelly_2.png" to Res.drawable.jelly_2,
@@ -513,6 +534,9 @@ private val bodyDrawables = mapOf(
     "jelly_5.png" to Res.drawable.jelly_5,
     "jelly_6.png" to Res.drawable.jelly_6,
     "bomb.png" to Res.drawable.bomb,
+    "ice_1.png" to Res.drawable.ice_1,
+    "ice_2.png" to Res.drawable.ice_2,
+    "ice_3.png" to Res.drawable.ice_3,
 )
 
 private val faceDrawables = mapOf(
